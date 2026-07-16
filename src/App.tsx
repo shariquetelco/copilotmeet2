@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import CopilotDot from "@/components/copilot/CopilotDot";
 import { useCopilotStore } from "@/store/copilotStore";
+import { useEffect, useState as useReactState } from "react";
+import { useProjectStore } from "@/store/projectStore";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -50,6 +52,7 @@ function App() {
     </main>
     <CopilotDot />
     <StateTestButtons />
+    <ProjectTestPanel />
     </>
   );
 }
@@ -76,6 +79,56 @@ function StateTestButtons() {
       <button onClick={() => setState("thinking")} className="px-3 py-1 bg-neutral-700 text-white rounded">Thinking</button>
       <button onClick={() => setState("answering")} className="px-3 py-1 bg-neutral-700 text-white rounded">Answering</button>
       <button onClick={addMockQuestion} className="px-3 py-1 bg-blue-700 text-white rounded">+ Add Question</button>
+    </div>
+  );
+}
+
+function ProjectTestPanel() {
+  const { projects, loading, error, fetchProjects, createProject, deleteProject } =
+    useProjectStore();
+  const [name, setName] = useReactState("");
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  return (
+    <div className="fixed top-4 right-4 bg-white border rounded p-4 w-72 z-50 text-sm">
+      <h2 className="font-bold mb-2">Project Test Panel</h2>
+      {loading && <p>Loading...</p>}
+      {error && <p className="text-red-500">{error}</p>}
+      <div className="flex gap-2 mb-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Project name"
+          className="border px-2 py-1 flex-1"
+        />
+        <button
+          onClick={() => {
+            if (name.trim()) {
+              createProject(name, "Interview");
+              setName("");
+            }
+          }}
+          className="bg-blue-600 text-white px-2 py-1 rounded"
+        >
+          Add
+        </button>
+      </div>
+      <ul className="flex flex-col gap-1">
+        {projects.map((p) => (
+          <li key={p.id} className="flex justify-between items-center border-b py-1">
+            <span>{p.name} <span className="text-neutral-400">({p.meeting_mode})</span></span>
+            <button
+              onClick={() => deleteProject(p.id)}
+              className="text-red-500 text-xs"
+            >
+              delete
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

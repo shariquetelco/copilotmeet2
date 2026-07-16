@@ -1,8 +1,12 @@
 mod db;
+mod repositories;
+mod commands;
 
 use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::Manager;
+
+use commands::project::{create_project, list_projects, update_project, delete_project};
 
 pub struct AppState {
     pub db: Mutex<Connection>,
@@ -33,7 +37,13 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            create_project,
+            list_projects,
+            update_project,
+            delete_project
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
