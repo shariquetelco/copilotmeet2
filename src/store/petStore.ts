@@ -1,5 +1,8 @@
 import { create } from "zustand";
 
+export type PetStatus = "ready" | "standby" | "setup-required";
+export type PetState = "idle" | "thinking" | "answering";
+
 export interface QAEntry {
   id: string;
   question: string;
@@ -11,19 +14,19 @@ export interface QAEntry {
   timestamp: number;
 }
 
-interface CopilotStore {
-  status: CopilotStatus;
-  state: CopilotState;
+interface PetStore {
+  status: PetStatus;
+  state: PetState;
   expanded: boolean;
   qaHistory: QAEntry[];
-  setStatus: (status: CopilotStatus) => void;
-  setState: (state: CopilotState) => void;
+  setStatus: (status: PetStatus) => void;
+  setState: (state: PetState) => void;
   setExpanded: (expanded: boolean) => void;
   addQAEntry: (entry: Omit<QAEntry, "id" | "pinned" | "timestamp">) => void;
   togglePin: (id: string) => void;
 }
 
-export const useCopilotStore = create<CopilotStore>((set) => ({
+export const usePetStore = create<PetStore>((set) => ({
   status: "standby",
   state: "idle",
   expanded: false,

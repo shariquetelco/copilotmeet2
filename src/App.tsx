@@ -1,12 +1,12 @@
 import "./App.css";
-import CopilotDot from "@/components/copilot/CopilotDot";
+import PetWidget from "@/components/pet/PetWidget";
 import SettingsPage from "@/pages/SettingsPage";
 
 function App() {
   return (
     <>
       <SettingsPage />
-      <CopilotDot />
+      <PetWidget />
     </>
   );
 }

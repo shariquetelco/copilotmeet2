@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useCopilotStore } from "@/store/copilotStore";
+import { usePetStore } from "@/store/petStore";
 
 const statusColors: Record<string, string> = {
   ready: "bg-green-500",
@@ -15,9 +15,9 @@ const stateAnimations: Record<string, string> = {
 
 const RAG_CONFIDENCE_THRESHOLD = 85;
 
-export default function CopilotDot() {
+export default function PetWidget() {
   const { status, state, expanded, setExpanded, qaHistory, togglePin } =
-    useCopilotStore();
+    usePetStore();
   const [position, setPosition] = useState({ x: 100, y: 100 });
   const [dragging, setDragging] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -83,7 +83,7 @@ export default function CopilotDot() {
             <span className="text-xs text-neutral-400 uppercase tracking-wide">
               {state}
             </span>
-            <span className="text-xs text-neutral-500">CoPilot</span>
+            <span className="text-xs text-neutral-500">Nova</span>
           </div>
 
           <div
