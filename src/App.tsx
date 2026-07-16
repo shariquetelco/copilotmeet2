@@ -2,6 +2,7 @@ import { useState } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
+import CopilotDot from "@/components/copilot/CopilotDot";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -13,6 +14,7 @@ function App() {
   }
 
   return (
+    <>
     <main className="container">
       <h1 className="text-4xl font-bold text-blue-500">Welcome to Tauri + React</h1>
 
@@ -45,6 +47,8 @@ function App() {
       </form>
       <p>{greetMsg}</p>
     </main>
+    <CopilotDot />
+    </>
   );
 }
 
