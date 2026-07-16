@@ -1,14 +1,12 @@
 import "./App.css";
 import CopilotDot from "@/components/copilot/CopilotDot";
-import ThemeToggle from "@/components/settings/ThemeToggle";
+import SettingsPage from "@/pages/SettingsPage";
 
 function App() {
   return (
     <>
+      <SettingsPage />
       <CopilotDot />
-      <div className="fixed top-4 left-4 z-50">
-        <ThemeToggle />
-      </div>
     </>
   );
 }
