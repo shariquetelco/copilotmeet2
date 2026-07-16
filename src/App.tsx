@@ -3,6 +3,7 @@ import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import "./App.css";
 import CopilotDot from "@/components/copilot/CopilotDot";
+import { useCopilotStore } from "@/store/copilotStore";
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -48,7 +49,19 @@ function App() {
       <p>{greetMsg}</p>
     </main>
     <CopilotDot />
+    <StateTestButtons />
     </>
+  );
+}
+
+function StateTestButtons() {
+  const setState = useCopilotStore((s) => s.setState);
+  return (
+    <div className="fixed bottom-4 left-4 flex gap-2 z-50">
+      <button onClick={() => setState("idle")} className="px-3 py-1 bg-neutral-700 text-white rounded">Idle</button>
+      <button onClick={() => setState("thinking")} className="px-3 py-1 bg-neutral-700 text-white rounded">Thinking</button>
+      <button onClick={() => setState("answering")} className="px-3 py-1 bg-neutral-700 text-white rounded">Answering</button>
+    </div>
   );
 }
 

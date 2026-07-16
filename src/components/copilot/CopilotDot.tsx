@@ -7,6 +7,12 @@ const statusColors: Record<string, string> = {
   "setup-required": "bg-red-500",
 };
 
+const stateAnimations: Record<string, string> = {
+  idle: "",
+  thinking: "animate-pulse",
+  answering: "animate-bounce",
+};
+
 export default function CopilotDot() {
   const { status, state, expanded, setExpanded } = useCopilotStore();
   const [position, setPosition] = useState({ x: 100, y: 100 });
@@ -57,7 +63,9 @@ export default function CopilotDot() {
       onClick={handleClick}
       className={`fixed cursor-grab active:cursor-grabbing transition-all duration-300 ease-out rounded-full ${
         expanded ? "w-64 h-32" : "w-6 h-6"
-      } ${expanded ? "bg-neutral-900" : statusColors[status]}`}
+      } ${expanded ? "bg-neutral-900" : statusColors[status]} ${
+        !expanded ? stateAnimations[state] : ""
+      }`}
       style={{ left: position.x, top: position.y }}
     >
       {expanded && (
