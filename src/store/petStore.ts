@@ -14,14 +14,27 @@ export interface QAEntry {
   timestamp: number;
 }
 
+export type PetSize = "small" | "medium" | "large";
+export type PetPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
 interface PetStore {
   status: PetStatus;
   state: PetState;
   expanded: boolean;
   qaHistory: QAEntry[];
+  persona: string;
+  size: PetSize;
+  position: PetPosition;
+  opacityIdle: number;
+  alwaysOnTop: boolean;
   setStatus: (status: PetStatus) => void;
   setState: (state: PetState) => void;
   setExpanded: (expanded: boolean) => void;
+  setPersona: (persona: string) => void;
+  setSize: (size: PetSize) => void;
+  setPosition: (position: PetPosition) => void;
+  setOpacityIdle: (opacity: number) => void;
+  setAlwaysOnTop: (value: boolean) => void;
   addQAEntry: (entry: Omit<QAEntry, "id" | "pinned" | "timestamp">) => void;
   togglePin: (id: string) => void;
 }
@@ -31,9 +44,19 @@ export const usePetStore = create<PetStore>((set) => ({
   state: "idle",
   expanded: false,
   qaHistory: [],
+  persona: "nova",
+  size: "medium",
+  position: "bottom-right",
+  opacityIdle: 1,
+  alwaysOnTop: true,
   setStatus: (status) => set({ status }),
   setState: (state) => set({ state }),
   setExpanded: (expanded) => set({ expanded }),
+  setPersona: (persona) => set({ persona }),
+  setSize: (size) => set({ size }),
+  setPosition: (position) => set({ position }),
+  setOpacityIdle: (opacityIdle) => set({ opacityIdle }),
+  setAlwaysOnTop: (alwaysOnTop) => set({ alwaysOnTop }),
   addQAEntry: (entry) =>
     set((s) => ({
       qaHistory: [

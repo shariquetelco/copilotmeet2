@@ -16,9 +16,38 @@ const stateAnimations: Record<string, string> = {
 const RAG_CONFIDENCE_THRESHOLD = 85;
 
 export default function PetWidget() {
-  const { status, state, expanded, setExpanded, qaHistory, togglePin } =
-    usePetStore();
-  const [position, setPosition] = useState({ x: 100, y: 100 });
+  const {
+    status,
+    state,
+    expanded,
+    setExpanded,
+    qaHistory,
+    togglePin,
+    size,
+    position: dockPosition,
+    opacityIdle,
+  } = usePetStore();
+
+  const sizeMap = { small: 16, medium: 24, large: 32 };
+  const dotSize = sizeMap[size];
+
+  const dockCoords = {
+    "top-left": { x: 24, y: 24 },
+    "top-right": { x: window.innerWidth - dotSize - 24, y: 24 },
+    "bottom-left": { x: 24, y: window.innerHeight - dotSize - 24 },
+    "bottom-right": {
+      x: window.innerWidth - dotSize - 24,
+      y: window.innerHeight - dotSize - 24,
+    },
+  };
+
+  const [position, setPosition] = useState(dockCoords[dockPosition]);
+
+  useEffect(() => {
+    if (!expanded) {
+      setPosition(dockCoords[dockPosition]);
+    }
+  }, [dockPosition]);
   const [dragging, setDragging] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [moved, setMoved] = useState(false);
@@ -71,11 +100,17 @@ export default function PetWidget() {
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       className={`fixed cursor-grab active:cursor-grabbing transition-all duration-300 ease-out overflow-hidden shadow-2xl ${
-        expanded ? "w-[45vw] h-[70vh] rounded-2xl" : "w-6 h-6 rounded-full"
+        expanded ? "w-[45vw] h-[70vh] rounded-2xl" : "rounded-full"
       } ${expanded ? "bg-neutral-900" : statusColors[status]} ${
         !expanded ? stateAnimations[state] : ""
       }`}
-      style={{ left: position.x, top: position.y }}
+      style={{
+        left: position.x,
+        top: position.y,
+        width: expanded ? undefined : dotSize,
+        height: expanded ? undefined : dotSize,
+        opacity: !expanded && state === "idle" ? opacityIdle : 1,
+      }}
     >
       {expanded && (
         <div className="flex flex-col h-full text-white text-sm">

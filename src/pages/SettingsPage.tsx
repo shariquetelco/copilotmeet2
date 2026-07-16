@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 import GeneralSettings from "@/components/settings/GeneralSettings";
+import PetSettings from "@/components/settings/PetSettings";
 import {
   Settings as SettingsIcon,
   Bot,
@@ -107,7 +108,7 @@ export default function SettingsPage() {
           {active}
         </h1>
         {active === "General" && <GeneralSettings />}
-        {active === "Pet" && <div>Pet settings go here</div>}
+        {active === "Pet" && <PetSettings />}
         {active === "AI" && <div>AI settings go here</div>}
         {active === "Projects" && <div>Projects settings go here</div>}
         {active === "Hotkeys" && <div>Hotkeys settings go here</div>}
