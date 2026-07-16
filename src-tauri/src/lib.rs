@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 use commands::project::{create_project, list_projects, update_project, delete_project};
+use commands::settings::{get_setting, set_setting, get_all_settings, delete_setting};
 
 pub struct AppState {
     pub db: Mutex<Connection>,
@@ -42,7 +43,11 @@ pub fn run() {
             create_project,
             list_projects,
             update_project,
-            delete_project
+            delete_project,
+            get_setting,
+            set_setting,
+            get_all_settings,
+            delete_setting
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

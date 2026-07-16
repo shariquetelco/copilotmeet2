@@ -72,6 +72,13 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at TEXT NOT NULL
 );
 
+-- API Keys (encrypted individually, separate from settings)
+CREATE TABLE IF NOT EXISTS api_keys (
+    provider TEXT PRIMARY KEY,
+    encrypted_key TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- Companion
 CREATE TABLE IF NOT EXISTS companion (
     id INTEGER PRIMARY KEY CHECK (id = 1),
