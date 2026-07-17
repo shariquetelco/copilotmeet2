@@ -56,11 +56,18 @@ function StorageMeter({ used, limit }: { used: number; limit: number }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === "uploaded") {
+  if (status === "ready") {
     return (
       <span className="text-[12px] font-semibold px-2 py-1 rounded-full bg-green-100 text-success flex items-center gap-1 shrink-0">
         <CheckCircle2 size={12} />
         Ready
+      </span>
+    );
+  }
+  if (status === "uploaded") {
+    return (
+      <span className="text-[12px] font-semibold px-2 py-1 rounded-full bg-orange-100 text-warning shrink-0">
+        Processing not yet supported for this file type
       </span>
     );
   }

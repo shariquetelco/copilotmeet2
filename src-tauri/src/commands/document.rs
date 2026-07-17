@@ -1,4 +1,6 @@
 use crate::repositories::document::{Document, DocumentRepository};
+use crate::repositories::document_job::{DocumentJob, DocumentJobRepository};
+use crate::rag_engine;
 use crate::AppState;
 use tauri::{State, Manager, AppHandle};
 use uuid::Uuid;
@@ -76,6 +78,21 @@ pub fn upload_document(
 
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     DocumentRepository::create(&conn, &doc).map_err(|e| e.to_string())?;
+
+    let now = Utc::now().to_rfc3339();
+    let job = DocumentJob {
+        id: Uuid::new_v4().to_string(),
+        document_id: doc.id.clone(),
+        stage: "pending".to_string(),
+        error: None,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    DocumentJobRepository::create(&conn, &job).map_err(|e| e.to_string())?;
+
+    // Synchronous for now — real background threading arrives once
+    // slower extraction types (PDF/OCR) make blocking noticeable.
+    rag_engine::process_document(&conn, &doc)?;
 
     Ok(doc)
 }

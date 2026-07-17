@@ -1,6 +1,7 @@
 mod db;
 mod repositories;
 mod commands;
+mod rag_engine;
 
 use rusqlite::Connection;
 use std::sync::Mutex;

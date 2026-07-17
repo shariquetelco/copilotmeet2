@@ -12,6 +12,18 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "002_add_document_status",
         "ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'uploaded';",
     ),
+    (
+        "003_create_document_jobs",
+        "CREATE TABLE IF NOT EXISTS document_jobs (
+            id TEXT PRIMARY KEY,
+            document_id TEXT NOT NULL,
+            stage TEXT NOT NULL DEFAULT 'pending',
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+        );",
+    ),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {

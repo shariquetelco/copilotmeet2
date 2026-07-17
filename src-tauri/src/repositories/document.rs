@@ -61,6 +61,14 @@ impl DocumentRepository {
         Ok(())
     }
 
+    pub fn update_status(conn: &Connection, id: &str, status: &str) -> Result<()> {
+        conn.execute(
+            "UPDATE documents SET status = ?1 WHERE id = ?2",
+            params![status, id],
+        )?;
+        Ok(())
+    }
+
     pub fn total_size_for_project(conn: &Connection, project_id: &str) -> Result<i64> {
         conn.query_row(
             "SELECT COALESCE(SUM(file_size_bytes), 0) FROM documents WHERE project_id = ?1",
