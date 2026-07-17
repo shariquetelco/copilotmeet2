@@ -4,6 +4,7 @@ import GeneralSettings from "@/components/settings/GeneralSettings";
 import PetSettings from "@/components/settings/PetSettings";
 import AISettings from "@/components/settings/AISettings";
 import ProjectsPage from "@/pages/ProjectsPage";
+import PrivacySettings from "@/components/settings/PrivacySettings";
 import {
   Settings as SettingsIcon,
   Bot,
@@ -124,7 +125,7 @@ export default function SettingsPage() {
         {active === "Pet" && <PetSettings />}
         {active === "AI" && <AISettings />}
         {active === "Hotkeys" && <div>Hotkeys settings go here</div>}
-        {active === "Privacy" && <div>Privacy settings go here</div>}
+        {active === "Privacy" && <PrivacySettings />}
         {active === "Updates" && <div>Updates settings go here</div>}
       </main>
     </div>

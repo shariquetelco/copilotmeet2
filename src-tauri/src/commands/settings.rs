@@ -28,3 +28,9 @@ pub fn delete_setting(state: State<AppState>, key: String) -> Result<(), String>
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     SettingsRepository::delete(&conn, &key).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn optimize_database(state: State<AppState>) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    conn.execute_batch("VACUUM;").map_err(|e| e.to_string())
+}
