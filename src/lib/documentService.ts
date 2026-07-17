@@ -35,6 +35,18 @@ export const documentService = {
 
   getStorageUsed: (projectId: string): Promise<number> =>
     invoke("get_project_storage", { projectId }),
+
+  getJob: (documentId: string): Promise<DocumentJob | null> =>
+    invoke("get_document_job", { documentId }),
 };
+
+export interface DocumentJob {
+  id: string;
+  document_id: string;
+  stage: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export const FREE_TIER_LIMIT_BYTES = 5 * 1024 * 1024;

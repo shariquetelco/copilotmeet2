@@ -110,6 +110,12 @@ pub fn get_project_storage(state: State<AppState>, project_id: String) -> Result
 }
 
 #[tauri::command]
+pub fn get_document_job(state: State<AppState>, document_id: String) -> Result<Option<DocumentJob>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    DocumentJobRepository::get_by_document(&conn, &document_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn delete_document(state: State<AppState>, id: String, file_path: String) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     DocumentRepository::delete(&conn, &id).map_err(|e| e.to_string())?;

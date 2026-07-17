@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useDocumentStore } from "@/store/documentStore";
 import { Document, FREE_TIER_LIMIT_BYTES } from "@/lib/documentService";
+import ProcessingStepper from "@/components/documents/ProcessingStepper";
 import {
   FileText,
   FileImage,
@@ -10,6 +11,8 @@ import {
   Trash2,
   CheckCircle2,
 } from "lucide-react";
+
+const SUPPORTED_PROCESSING_TYPES = ["TXT", "MD"];
 
 const fileIcons: Record<string, any> = {
   PDF: FileText,
@@ -82,23 +85,28 @@ function DocumentRow({ doc, onDelete }: { doc: Document; onDelete: () => void })
   const Icon = fileIcons[doc.file_type] ?? FileText;
 
   return (
-    <div className="flex items-center gap-4 bg-card rounded-2xl shadow-sm px-5 py-4 transition-all hover:shadow-md">
-      <Icon size={28} className="text-primary shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="text-[16px] font-semibold text-foreground truncate">
-          {doc.file_name}
+    <div className="bg-card rounded-2xl shadow-sm px-5 py-4 transition-all hover:shadow-md">
+      <div className="flex items-center gap-4">
+        <Icon size={28} className="text-primary shrink-0" />
+        <div className="flex-1 min-w-0">
+          <div className="text-[16px] font-semibold text-foreground truncate">
+            {doc.file_name}
+          </div>
+          <div className="text-[13px] text-muted-foreground">
+            {doc.file_type} · {formatSize(doc.file_size_bytes)}
+          </div>
         </div>
-        <div className="text-[13px] text-muted-foreground">
-          {doc.file_type} · {formatSize(doc.file_size_bytes)}
-        </div>
+        <StatusBadge status={doc.status} />
+        <button
+          onClick={onDelete}
+          className="p-2 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 shrink-0"
+        >
+          <Trash2 size={16} />
+        </button>
       </div>
-      <StatusBadge status={doc.status} />
-      <button
-        onClick={onDelete}
-        className="p-2 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50 shrink-0"
-      >
-        <Trash2 size={16} />
-      </button>
+      {doc.status !== "ready" && SUPPORTED_PROCESSING_TYPES.includes(doc.file_type) && (
+        <ProcessingStepper documentId={doc.id} />
+      )}
     </div>
   );
 }
