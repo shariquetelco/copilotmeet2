@@ -7,6 +7,7 @@ pub struct Project {
     pub name: String,
     pub meeting_mode: String,
     pub llm_profile: Option<String>,
+    pub color: String,
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
@@ -17,13 +18,14 @@ pub struct ProjectRepository;
 impl ProjectRepository {
     pub fn create(conn: &Connection, project: &Project) -> Result<()> {
         conn.execute(
-            "INSERT INTO projects (id, name, meeting_mode, llm_profile, is_active, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO projects (id, name, meeting_mode, llm_profile, color, is_active, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 project.id,
                 project.name,
                 project.meeting_mode,
                 project.llm_profile,
+                project.color,
                 project.is_active as i32,
                 project.created_at,
                 project.updated_at,
@@ -34,7 +36,7 @@ impl ProjectRepository {
 
     pub fn list(conn: &Connection) -> Result<Vec<Project>> {
         let mut stmt = conn.prepare(
-            "SELECT id, name, meeting_mode, llm_profile, is_active, created_at, updated_at
+            "SELECT id, name, meeting_mode, llm_profile, color, is_active, created_at, updated_at
              FROM projects ORDER BY updated_at DESC",
         )?;
 
@@ -44,9 +46,10 @@ impl ProjectRepository {
                 name: row.get(1)?,
                 meeting_mode: row.get(2)?,
                 llm_profile: row.get(3)?,
-                is_active: row.get::<_, i32>(4)? != 0,
-                created_at: row.get(5)?,
-                updated_at: row.get(6)?,
+                color: row.get(4)?,
+                is_active: row.get::<_, i32>(5)? != 0,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
             })
         })?;
 
@@ -56,12 +59,13 @@ impl ProjectRepository {
     pub fn update(conn: &Connection, project: &Project) -> Result<()> {
         conn.execute(
             "UPDATE projects
-             SET name = ?1, meeting_mode = ?2, llm_profile = ?3, is_active = ?4, updated_at = ?5
-             WHERE id = ?6",
+             SET name = ?1, meeting_mode = ?2, llm_profile = ?3, color = ?4, is_active = ?5, updated_at = ?6
+             WHERE id = ?7",
             params![
                 project.name,
                 project.meeting_mode,
                 project.llm_profile,
+                project.color,
                 project.is_active as i32,
                 project.updated_at,
                 project.id,

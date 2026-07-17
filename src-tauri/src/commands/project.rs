@@ -9,6 +9,7 @@ pub fn create_project(
     state: State<AppState>,
     name: String,
     meeting_mode: String,
+    color: String,
 ) -> Result<Project, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     let now = Utc::now().to_rfc3339();
@@ -18,6 +19,7 @@ pub fn create_project(
         name,
         meeting_mode,
         llm_profile: None,
+        color,
         is_active: false,
         created_at: now.clone(),
         updated_at: now,

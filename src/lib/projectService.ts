@@ -5,14 +5,15 @@ export interface Project {
   name: string;
   meeting_mode: string;
   llm_profile: string | null;
+  color: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export const projectService = {
-  create: (name: string, meeting_mode: string): Promise<Project> =>
-    invoke("create_project", { name, meetingMode: meeting_mode }),
+  create: (name: string, meeting_mode: string, color: string): Promise<Project> =>
+    invoke("create_project", { name, meetingMode: meeting_mode, color }),
 
   list: (): Promise<Project[]> => invoke("list_projects"),
 

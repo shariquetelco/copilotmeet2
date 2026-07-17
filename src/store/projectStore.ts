@@ -6,7 +6,7 @@ interface ProjectStore {
   loading: boolean;
   error: string | null;
   fetchProjects: () => Promise<void>;
-  createProject: (name: string, meetingMode: string) => Promise<void>;
+  createProject: (name: string, meetingMode: string, color: string) => Promise<void>;
   updateProject: (project: Project) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   setActiveProject: (id: string) => Promise<void>;
@@ -27,9 +27,9 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
-  createProject: async (name, meetingMode) => {
+  createProject: async (name, meetingMode, color) => {
     try {
-      await projectService.create(name, meetingMode);
+      await projectService.create(name, meetingMode, color);
       await get().fetchProjects();
     } catch (err) {
       set({ error: String(err) });
