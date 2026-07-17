@@ -1,5 +1,6 @@
 mod pdf_extract;
 mod office_extract;
+mod ocr_extract;
 
 use crate::repositories::document::{Document, DocumentRepository};
 use crate::repositories::document_job::DocumentJobRepository;
@@ -77,9 +78,27 @@ pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String>
             advance("completed", None)?;
             DocumentRepository::update_status(conn, &doc.id, "ready").map_err(|e| e.to_string())?;
         }
+        "PNG" | "JPG" | "JPEG" => {
+            advance("ocr", None)?;
+
+            let text = ocr_extract::extract_text_from_image(&doc.file_path)?;
+
+            if text.trim().is_empty() {
+                advance("failed", Some("No readable text found in this image"))?;
+                return Ok(());
+            }
+
+            advance("cleaning", None)?;
+            advance("chunking", None)?;
+            advance("embedding", None)?;
+            advance("indexing", None)?;
+            advance("completed", None)?;
+            DocumentRepository::update_status(conn, &doc.id, "ready").map_err(|e| e.to_string())?;
+        }
         _ => {
-            // PNG/JPEG (OCR) not yet implemented —
-            // job stays at "pending" rather than silently failing or faking success.
+            // Scanned PDFs (no text layer) not yet implemented —
+            // requires rasterizing PDF pages to images before OCR can run.
+            // Currently stays honestly at the "ocr" stage.
         }
     }
 

@@ -12,7 +12,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
-const SUPPORTED_PROCESSING_TYPES = ["TXT", "MD", "PDF", "DOCX", "XLSX", "PPTX"];
+const SUPPORTED_PROCESSING_TYPES = ["TXT", "MD", "PDF", "DOCX", "XLSX", "PPTX", "PNG", "JPG", "JPEG"];
 
 const fileIcons: Record<string, any> = {
   PDF: FileText,
