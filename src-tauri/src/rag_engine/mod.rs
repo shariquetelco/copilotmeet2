@@ -2,12 +2,15 @@ mod pdf_extract;
 mod office_extract;
 mod ocr_extract;
 mod normalize;
+mod chunk;
 
 use crate::repositories::document::{Document, DocumentRepository};
 use crate::repositories::document_job::DocumentJobRepository;
+use crate::repositories::chunk::{Chunk, ChunkRepository};
 use rusqlite::Connection;
 use chrono::Utc;
 use std::fs;
+use uuid::Uuid;
 
 pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String> {
     let advance = |stage: &str, error: Option<&str>| -> Result<(), String> {
@@ -53,7 +56,27 @@ pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String>
     let cleaned_text = normalize::clean(&raw_text);
 
     advance("chunking", None)?;
-    // Chunking implementation arrives next step
+    let text_chunks = chunk::chunk_text(
+        &cleaned_text,
+        chunk::DEFAULT_CHUNK_SIZE_WORDS,
+        chunk::DEFAULT_OVERLAP_WORDS,
+    );
+
+    let now = Utc::now().to_rfc3339();
+    let chunk_records: Vec<Chunk> = text_chunks
+        .iter()
+        .enumerate()
+        .map(|(i, content)| Chunk {
+            id: Uuid::new_v4().to_string(),
+            document_id: doc.id.clone(),
+            project_id: doc.project_id.clone(),
+            chunk_index: i as i32,
+            content: content.clone(),
+            created_at: now.clone(),
+        })
+        .collect();
+
+    ChunkRepository::create_many(conn, &chunk_records).map_err(|e| e.to_string())?;
 
     advance("embedding", None)?;
     // Embedding implementation arrives in a follow-up step
@@ -63,8 +86,6 @@ pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String>
 
     advance("completed", None)?;
     DocumentRepository::update_status(conn, &doc.id, "ready").map_err(|e| e.to_string())?;
-
-    let _ = cleaned_text; // will be consumed by chunking, next step
 
     Ok(())
 }

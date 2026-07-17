@@ -24,6 +24,19 @@ const MIGRATIONS: &[(&str, &str)] = &[
             FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
         );",
     ),
+    (
+        "004_create_chunks",
+        "CREATE TABLE IF NOT EXISTS chunks (
+            id TEXT PRIMARY KEY,
+            document_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE,
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );",
+    ),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
