@@ -71,3 +71,7 @@ export const usePetStore = create<PetStore>((set) => ({
       ),
     })),
 }));
+
+if (import.meta.env.DEV) {
+  (window as any).petStore = usePetStore;
+}

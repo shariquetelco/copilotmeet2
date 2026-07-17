@@ -30,23 +30,21 @@ export default function PetFace({
       <circle cx="50" cy="50" r="46" fill={color} />
 
       {/* left eye */}
-      <motion.ellipse
+      <ellipse
         cx={38 + eyeOffsetX}
         cy={eyeCy}
-        rx="6"
+        rx={6}
         ry={eyeRy}
         fill="white"
-        transition={{ duration: 0.12 }}
       />
 
       {/* right eye */}
-      <motion.ellipse
+      <ellipse
         cx={62 + eyeOffsetX}
         cy={eyeCy}
-        rx="6"
+        rx={6}
         ry={eyeRy}
         fill="white"
-        transition={{ duration: 0.12 }}
       />
 
       {/* mouth */}

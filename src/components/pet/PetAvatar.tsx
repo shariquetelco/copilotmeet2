@@ -15,6 +15,11 @@ const statusColor: Record<PetStatus, string> = {
   "setup-required": "#DC2626",
 };
 
+const stateColor: Record<PetState, string> = {
+  idle: "#EA580C",
+  thinking: "#7C3AED",
+  answering: "#16A34A",
+};
 const stateFace: Record<
   PetState,
   { mouth: "flat" | "smile" | "talking"; eyeOffsetX: number; tilt: number }
@@ -49,7 +54,11 @@ export default function PetAvatar({ state, status, size }: PetAvatarProps) {
       {/* status ring */}
       <motion.div
         className="absolute inset-[-6px] rounded-full"
-        style={{ border: `3px solid ${statusColor[status]}` }}
+        style={{
+          border: `3px solid ${
+            status === "setup-required" ? statusColor[status] : stateColor[state]
+          }`,
+        }}
         animate={
           state === "thinking"
             ? { scale: [1, 1.08, 1], opacity: [1, 0.6, 1] }
