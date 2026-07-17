@@ -74,4 +74,14 @@ impl ProjectRepository {
         conn.execute("DELETE FROM projects WHERE id = ?1", params![id])?;
         Ok(())
     }
+
+    /// Sets exactly one project as active, deactivating all others atomically.
+    pub fn set_active(conn: &Connection, id: &str, updated_at: &str) -> Result<()> {
+        conn.execute("UPDATE projects SET is_active = 0", [])?;
+        conn.execute(
+            "UPDATE projects SET is_active = 1, updated_at = ?1 WHERE id = ?2",
+            params![updated_at, id],
+        )?;
+        Ok(())
+    }
 }

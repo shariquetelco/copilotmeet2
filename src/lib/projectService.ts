@@ -20,4 +20,6 @@ export const projectService = {
     invoke("update_project", { project }),
 
   remove: (id: string): Promise<void> => invoke("delete_project", { id }),
+
+  setActive: (id: string): Promise<void> => invoke("set_active_project", { id }),
 };

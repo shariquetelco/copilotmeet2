@@ -6,7 +6,7 @@ use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::Manager;
 
-use commands::project::{create_project, list_projects, update_project, delete_project};
+use commands::project::{create_project, list_projects, update_project, delete_project, set_active_project};
 use commands::settings::{get_setting, set_setting, get_all_settings, delete_setting};
 use commands::api_keys::{set_api_key, get_api_key, delete_api_key};
 
@@ -45,6 +45,7 @@ pub fn run() {
             list_projects,
             update_project,
             delete_project,
+            set_active_project,
             get_setting,
             set_setting,
             get_all_settings,

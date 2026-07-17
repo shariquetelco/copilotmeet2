@@ -1,3 +1,5 @@
+mod migrations;
+
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::fs;
@@ -17,6 +19,7 @@ pub fn init_db(app_data_dir: &PathBuf) -> Result<Connection, rusqlite::Error> {
     let conn = Connection::open(db_path)?;
 
     conn.execute_batch(SCHEMA)?;
+    migrations::run_migrations(&conn)?;
 
     Ok(conn)
 }

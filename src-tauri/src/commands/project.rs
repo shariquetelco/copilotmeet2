@@ -51,3 +51,10 @@ pub fn delete_project(state: State<AppState>, id: String) -> Result<(), String> 
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     ProjectRepository::delete(&conn, &id).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn set_active_project(state: State<AppState>, id: String) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let now = Utc::now().to_rfc3339();
+    ProjectRepository::set_active(&conn, &id, &now).map_err(|e| e.to_string())
+}
