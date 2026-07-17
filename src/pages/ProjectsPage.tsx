@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useProjectStore } from "@/store/projectStore";
 import { Project } from "@/lib/projectService";
 import { FolderPlus, Folder, Trash2, FileText } from "lucide-react";
+import DocumentsPage from "@/pages/DocumentsPage";
 
 const meetingModes = ["Interview", "Sales", "Procurement", "Legal", "Executive", "Custom"];
 
@@ -131,7 +132,13 @@ function CreateProjectForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ProjectCard({ project }: { project: Project }) {
+function ProjectCard({
+  project,
+  onOpen,
+}: {
+  project: Project;
+  onOpen: () => void;
+}) {
   const { setActiveProject, deleteProject } = useProjectStore();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -142,7 +149,10 @@ function ProjectCard({ project }: { project: Project }) {
 
   return (
     <>
-      <div className="relative bg-card rounded-2xl shadow-sm p-4 pl-5 flex flex-col gap-2 overflow-hidden transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 hover:bg-secondary/40">
+      <div
+        onClick={onOpen}
+        className="relative bg-card rounded-2xl shadow-sm p-4 pl-5 flex flex-col gap-2 overflow-hidden transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 hover:bg-secondary/40 cursor-pointer"
+      >
         <div
           className="absolute left-0 top-0 bottom-0 w-1.5"
           style={{ backgroundColor: colorHex(project.color) }}
@@ -173,14 +183,20 @@ function ProjectCard({ project }: { project: Project }) {
         <div className="flex gap-2 mt-2">
           {!project.is_active && (
             <button
-              onClick={() => setActiveProject(project.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveProject(project.id);
+              }}
               className="flex-1 px-3 py-2 rounded-lg text-[14px] font-semibold bg-primary text-white hover:opacity-90"
             >
               Set Active
             </button>
           )}
           <button
-            onClick={() => setConfirmingDelete(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmingDelete(true);
+            }}
             className="px-3 py-2 rounded-lg text-muted-foreground hover:text-red-600 hover:bg-red-50"
           >
             <Trash2 size={16} />
@@ -205,10 +221,29 @@ function ProjectCard({ project }: { project: Project }) {
 export default function ProjectsPage() {
   const { projects, fetchProjects } = useProjectStore();
   const [creating, setCreating] = useState(false);
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProjects();
   }, []);
+
+  if (openProjectId) {
+    const openProject = projects.find((p) => p.id === openProjectId);
+    return (
+      <div>
+        <button
+          onClick={() => setOpenProjectId(null)}
+          className="text-[15px] font-medium text-primary mb-4 flex items-center gap-1"
+        >
+          ← Back to Projects
+        </button>
+        <h2 className="text-[24px] font-bold text-foreground mb-1">
+          {openProject?.name}
+        </h2>
+        <DocumentsPage projectId={openProjectId} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -236,7 +271,7 @@ export default function ProjectsPage() {
       ) : (
         <div className="grid grid-cols-3 gap-4">
           {projects.map((p) => (
-            <ProjectCard key={p.id} project={p} />
+            <ProjectCard key={p.id} project={p} onOpen={() => setOpenProjectId(p.id)} />
           ))}
         </div>
       )}

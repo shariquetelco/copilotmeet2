@@ -3,10 +3,16 @@ use chrono::Utc;
 
 /// Each migration is a (version, sql) pair. Add new ones to the end of this list.
 /// Never edit or remove an existing entry once it has shipped, only append.
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "001_add_project_color",
-    "ALTER TABLE projects ADD COLUMN color TEXT NOT NULL DEFAULT 'blue';",
-)];
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "001_add_project_color",
+        "ALTER TABLE projects ADD COLUMN color TEXT NOT NULL DEFAULT 'blue';",
+    ),
+    (
+        "002_add_document_status",
+        "ALTER TABLE documents ADD COLUMN status TEXT NOT NULL DEFAULT 'uploaded';",
+    ),
+];
 
 pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {
     for (version, sql) in MIGRATIONS {
