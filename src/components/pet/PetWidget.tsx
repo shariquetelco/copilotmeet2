@@ -1,17 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { usePetStore } from "@/store/petStore";
-
-const statusColors: Record<string, string> = {
-  ready: "bg-green-500",
-  standby: "bg-yellow-500",
-  "setup-required": "bg-red-500",
-};
-
-const stateAnimations: Record<string, string> = {
-  idle: "",
-  thinking: "animate-pulse",
-  answering: "animate-bounce",
-};
+import PetAvatar from "./PetAvatar";
+import { Pin, RotateCcw } from "lucide-react";
 
 const RAG_CONFIDENCE_THRESHOLD = 85;
 
@@ -28,7 +19,7 @@ export default function PetWidget() {
     opacityIdle,
   } = usePetStore();
 
-  const sizeMap = { small: 16, medium: 24, large: 32 };
+  const sizeMap = { small: 48, medium: 64, large: 88 };
   const dotSize = sizeMap[size];
 
   const dockCoords = {
@@ -48,6 +39,7 @@ export default function PetWidget() {
       setPosition(dockCoords[dockPosition]);
     }
   }, [dockPosition]);
+
   const [dragging, setDragging] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [moved, setMoved] = useState(false);
@@ -83,7 +75,6 @@ export default function PetWidget() {
     };
   }, [dragging, handleMouseMove, handleMouseUp]);
 
-  // auto-scroll to newest entry unless a pinned entry exists or user is hovering
   useEffect(() => {
     const hasPinned = qaHistory.some((q) => q.pinned);
     if (!hovering && !hasPinned && scrollRef.current) {
@@ -96,112 +87,127 @@ export default function PetWidget() {
   };
 
   return (
-    <div
+    <motion.div
       onMouseDown={handleMouseDown}
       onClick={handleClick}
-      className={`fixed cursor-grab active:cursor-grabbing transition-all duration-300 ease-out overflow-hidden shadow-2xl ${
-        expanded ? "w-[45vw] h-[70vh] rounded-2xl" : "rounded-full"
-      } ${expanded ? "bg-neutral-900" : statusColors[status]} ${
-        !expanded ? stateAnimations[state] : ""
+      className={`fixed cursor-grab active:cursor-grabbing ${
+        expanded ? "rounded-3xl shadow-2xl bg-white overflow-hidden" : ""
       }`}
-      style={{
-        left: position.x,
-        top: position.y,
-        width: expanded ? undefined : dotSize,
-        height: expanded ? undefined : dotSize,
+      style={{ left: position.x, top: position.y }}
+      initial={false}
+      animate={{
+        width: expanded ? "45vw" : dotSize,
+        height: expanded ? "70vh" : dotSize,
         opacity: !expanded && state === "idle" ? opacityIdle : 1,
       }}
+      transition={{ type: "spring", stiffness: 260, damping: 24 }}
     >
-      {expanded && (
-        <div className="flex flex-col h-full text-white text-sm">
-          <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0">
-            <span className="text-xs text-neutral-400 uppercase tracking-wide">
-              {state}
-            </span>
-            <span className="text-xs text-neutral-500">Nova</span>
-          </div>
+      {!expanded && <PetAvatar state={state} status={status} size={dotSize} />}
 
-          <div
-            ref={scrollRef}
-            onMouseEnter={(e) => {
-              e.stopPropagation();
-              setHovering(true);
-            }}
-            onMouseLeave={() => setHovering(false)}
-            className="flex-1 overflow-y-auto px-4 flex flex-col gap-4"
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="flex flex-col h-full"
           >
-            {qaHistory.length === 0 && (
-              <p className="text-neutral-500 text-xs italic">
-                Listening for questions…
-              </p>
-            )}
-            {qaHistory.map((qa) => (
-              <div
-                key={qa.id}
-                className={`pb-3 ${
-                  qa.pinned ? "border-l-2 border-blue-500 pl-2" : ""
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-red-400 font-medium leading-snug break-words">
-                    {qa.question}
-                  </p>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      togglePin(qa.id);
-                    }}
-                    className={`text-[8px] leading-none shrink-0 p-0 w-3 h-3 flex items-center justify-center ${
-                      qa.pinned ? "text-blue-400" : "text-neutral-500 hover:text-white"
-                    }`}
-                  >
-                    📌
-                  </button>
+            <div className="flex items-center gap-3 px-5 pt-5 pb-3 shrink-0 border-b border-border">
+              <PetAvatar state={state} status={status} size={40} />
+              <div>
+                <div className="font-bold text-[16px] text-foreground">Nova</div>
+                <div className="text-[13px] text-muted-foreground capitalize">
+                  {state}
                 </div>
+              </div>
+            </div>
 
-                <div className="border-t border-neutral-700 mt-2 pt-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs text-neutral-400 uppercase">
-                      RAG Answer
-                    </span>
-                    <span className="text-xs text-green-400">
-                      {qa.ragConfidence >= RAG_CONFIDENCE_THRESHOLD
-                        ? `🎉 RAG match ${qa.ragConfidence}%`
-                        : `${qa.ragConfidence}%`}
-                    </span>
+            <div
+              ref={scrollRef}
+              onMouseEnter={(e) => {
+                e.stopPropagation();
+                setHovering(true);
+              }}
+              onMouseLeave={() => setHovering(false)}
+              className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4"
+            >
+              {qaHistory.length === 0 && (
+                <p className="text-muted-foreground text-[15px] italic">
+                  Listening for questions…
+                </p>
+              )}
+              {qaHistory.map((qa) => (
+                <div
+                  key={qa.id}
+                  className={`rounded-2xl p-4 bg-secondary ${
+                    qa.pinned ? "ring-2 ring-primary" : ""
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-[17px] font-semibold text-foreground leading-snug break-words">
+                      {qa.question}
+                    </p>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePin(qa.id);
+                      }}
+                      className={`shrink-0 p-1 rounded-full ${
+                        qa.pinned
+                          ? "text-primary"
+                          : "text-muted-foreground hover:text-primary"
+                      }`}
+                    >
+                      <Pin size={14} fill={qa.pinned ? "currentColor" : "none"} />
+                    </button>
                   </div>
-                  <p className="text-neutral-200 leading-snug break-words">
-                    {qa.ragAnswer}
-                  </p>
-                </div>
 
-                {qa.ragConfidence < RAG_CONFIDENCE_THRESHOLD && (
-                  <div className="border-t border-neutral-700 mt-2 pt-2">
+                  <div className="mt-3 pt-3 border-t border-border/60">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-neutral-400 uppercase">
-                        LLM Answer
+                      <span className="text-[12px] font-bold text-muted-foreground uppercase tracking-wide">
+                        RAG Answer
                       </span>
-                      <span className="text-xs text-yellow-400">
-                        {qa.llmConfidence}%
+                      <span className="text-[12px] font-bold text-success">
+                        {qa.ragConfidence >= RAG_CONFIDENCE_THRESHOLD
+                          ? `🎉 ${qa.ragConfidence}% match`
+                          : `${qa.ragConfidence}%`}
                       </span>
                     </div>
-                    <p className="text-neutral-200 leading-snug break-words">
-                      {qa.llmAnswer}
+                    <p className="text-[15px] text-foreground leading-snug break-words">
+                      {qa.ragAnswer}
                     </p>
                   </div>
-                )}
 
-                <button
-                  onClick={(e) => e.stopPropagation()}
-                  className="self-end text-neutral-400 hover:text-white text-[10px] mt-2"
-                >
-                  ↻
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+                  {qa.ragConfidence < RAG_CONFIDENCE_THRESHOLD && (
+                    <div className="mt-3 pt-3 border-t border-border/60">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[12px] font-bold text-muted-foreground uppercase tracking-wide">
+                          LLM Answer
+                        </span>
+                        <span className="text-[12px] font-bold text-warning">
+                          {qa.llmConfidence}%
+                        </span>
+                      </div>
+                      <p className="text-[15px] text-foreground leading-snug break-words">
+                        {qa.llmAnswer}
+                      </p>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-2 flex items-center gap-1 text-muted-foreground hover:text-primary text-[12px] font-medium"
+                  >
+                    <RotateCcw size={12} />
+                    Refresh
+                  </button>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
