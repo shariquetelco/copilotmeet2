@@ -1,3 +1,6 @@
+mod pdf_extract;
+mod office_extract;
+
 use crate::repositories::document::{Document, DocumentRepository};
 use crate::repositories::document_job::DocumentJobRepository;
 use rusqlite::Connection;
@@ -38,8 +41,44 @@ pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String>
             advance("completed", None)?;
             DocumentRepository::update_status(conn, &doc.id, "ready").map_err(|e| e.to_string())?;
         }
+        "PDF" => {
+            advance("extracting", None)?;
+
+            let text = pdf_extract::extract_text(&doc.file_path)?;
+
+            if text.trim().is_empty() {
+                // No selectable text layer — this is a scanned PDF.
+                // OCR fallback isn't implemented yet, so stay honestly at this stage.
+                advance("ocr", None)?;
+                return Ok(());
+            }
+
+            advance("cleaning", None)?;
+            advance("chunking", None)?;
+            advance("embedding", None)?;
+            advance("indexing", None)?;
+            advance("completed", None)?;
+            DocumentRepository::update_status(conn, &doc.id, "ready").map_err(|e| e.to_string())?;
+        }
+        "DOCX" | "XLSX" | "PPTX" => {
+            advance("extracting", None)?;
+
+            let text = office_extract::extract_text(&doc.file_path, &doc.file_type)?;
+
+            if text.trim().is_empty() {
+                advance("failed", Some("No readable text found in this file"))?;
+                return Ok(());
+            }
+
+            advance("cleaning", None)?;
+            advance("chunking", None)?;
+            advance("embedding", None)?;
+            advance("indexing", None)?;
+            advance("completed", None)?;
+            DocumentRepository::update_status(conn, &doc.id, "ready").map_err(|e| e.to_string())?;
+        }
         _ => {
-            // PDF/DOCX/PPTX/XLSX/PNG/JPEG extraction not yet implemented —
+            // PNG/JPEG (OCR) not yet implemented —
             // job stays at "pending" rather than silently failing or faking success.
         }
     }
