@@ -45,13 +45,17 @@ pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String>
         "PDF" => {
             advance("extracting", None)?;
 
-            let text = pdf_extract::extract_text(&doc.file_path)?;
+            let mut text = pdf_extract::extract_text(&doc.file_path)?;
 
             if text.trim().is_empty() {
-                // No selectable text layer — this is a scanned PDF.
-                // OCR fallback isn't implemented yet, so stay honestly at this stage.
+                // No selectable text layer — this is a scanned PDF, fall back to OCR.
                 advance("ocr", None)?;
-                return Ok(());
+                text = pdf_extract::extract_text_via_ocr(&doc.file_path)?;
+
+                if text.trim().is_empty() {
+                    advance("failed", Some("No readable text found, even after OCR"))?;
+                    return Ok(());
+                }
             }
 
             advance("cleaning", None)?;

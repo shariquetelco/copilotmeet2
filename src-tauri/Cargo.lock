@@ -692,6 +692,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dotext",
+ "image",
  "pdfium-render",
  "rusqlite",
  "rusty-tesseract",
