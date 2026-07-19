@@ -38,7 +38,17 @@ export const documentService = {
 
   getJob: (documentId: string): Promise<DocumentJob | null> =>
     invoke("get_document_job", { documentId }),
+
+  search: (projectId: string, query: string, topK: number = 5): Promise<SearchResult[]> =>
+    invoke("search_documents", { projectId, query, topK }),
 };
+
+export interface SearchResult {
+  id: string;
+  document_id: string;
+  content: string;
+  distance: number;
+}
 
 export interface DocumentJob {
   id: string;

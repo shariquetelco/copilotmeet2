@@ -3,8 +3,8 @@ mod office_extract;
 mod ocr_extract;
 mod normalize;
 mod chunk;
-mod embed;
-mod vector_store;
+pub mod embed;
+pub mod vector_store;
 
 use crate::repositories::document::{Document, DocumentRepository};
 use crate::repositories::document_job::DocumentJobRepository;

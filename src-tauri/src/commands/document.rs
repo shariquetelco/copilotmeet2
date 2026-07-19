@@ -1,6 +1,8 @@
 use crate::repositories::document::{Document, DocumentRepository};
 use crate::repositories::document_job::{DocumentJob, DocumentJobRepository};
 use crate::rag_engine;
+use crate::rag_engine::vector_store::SearchResult;
+use crate::rag_engine::embed;
 use crate::AppState;
 use tauri::{State, Manager, AppHandle};
 use uuid::Uuid;
@@ -113,6 +115,22 @@ pub fn get_project_storage(state: State<AppState>, project_id: String) -> Result
 pub fn get_document_job(state: State<AppState>, document_id: String) -> Result<Option<DocumentJob>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     DocumentJobRepository::get_by_document(&conn, &document_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn search_documents(
+    app: AppHandle,
+    project_id: String,
+    query: String,
+    top_k: usize,
+) -> Result<Vec<SearchResult>, String> {
+    let query_embeddings = embed::embed_texts(&[query])?;
+    let query_vector = query_embeddings.get(0).ok_or("Failed to embed query")?;
+
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("lancedb").to_string_lossy().to_string();
+
+    rag_engine::vector_store::search(&db_path, query_vector, Some(&project_id), top_k)
 }
 
 #[tauri::command]

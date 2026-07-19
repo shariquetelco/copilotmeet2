@@ -1,7 +1,82 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useDocumentStore } from "@/store/documentStore";
-import { Document, FREE_TIER_LIMIT_BYTES } from "@/lib/documentService";
+import { Document, FREE_TIER_LIMIT_BYTES, documentService, SearchResult } from "@/lib/documentService";
 import ProcessingStepper from "@/components/documents/ProcessingStepper";
+import { Search } from "lucide-react";
+
+function KnowledgeSearch({ projectId }: { projectId: string }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searchTime, setSearchTime] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [topK, setTopK] = useState(5);
+
+  const runSearch = async () => {
+    if (!query.trim()) return;
+    setLoading(true);
+    const start = performance.now();
+    const res = await documentService.search(projectId, query, topK);
+    setSearchTime(Math.round(performance.now() - start));
+    setResults(res);
+    setLoading(false);
+  };
+
+  return (
+    <div className="bg-card rounded-2xl shadow-sm p-5 mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-[16px] font-bold text-foreground flex items-center gap-2">
+          <Search size={18} />
+          Knowledge Search
+        </h3>
+        <select
+          value={topK}
+          onChange={(e) => setTopK(Number(e.target.value))}
+          className="text-[13px] border border-input rounded-lg px-2 py-1 bg-white"
+        >
+          <option value={3}>Top 3</option>
+          <option value={5}>Top 5</option>
+          <option value={10}>Top 10</option>
+        </select>
+      </div>
+      <div className="flex gap-2 mb-3">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && runSearch()}
+          placeholder="Ask a question about your documents…"
+          className="flex-1 border border-input rounded-lg px-3 py-2 text-[15px] bg-white"
+        />
+        <button
+          onClick={runSearch}
+          disabled={loading}
+          className="px-4 py-2 bg-primary text-white rounded-lg text-[14px] font-semibold"
+        >
+          🔍 {loading ? "Searching…" : "Search"}
+        </button>
+      </div>
+
+      {searchTime !== null && (
+        <p className="text-[12px] text-muted-foreground mb-3">
+          {results.length} results in {searchTime}ms
+        </p>
+      )}
+
+      <div className="flex flex-col gap-3">
+        {results.map((r, i) => (
+          <div key={r.id} className="border border-border rounded-xl p-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[13px] font-bold text-primary">#{i + 1}</span>
+              <span className="text-[12px] font-mono text-muted-foreground">
+                distance: {r.distance.toFixed(4)}
+              </span>
+            </div>
+            <p className="text-[14px] text-foreground leading-snug">{r.content}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 import {
   FileText,
   FileImage,
@@ -122,6 +197,7 @@ export default function DocumentsPage({ projectId }: { projectId: string }) {
   return (
     <div>
       <StorageMeter used={storageUsed} limit={FREE_TIER_LIMIT_BYTES} />
+      <KnowledgeSearch projectId={projectId} />
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-2xl p-5 mb-6">
