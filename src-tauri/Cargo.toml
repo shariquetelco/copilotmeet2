@@ -27,6 +27,7 @@ rusty-tesseract = "1.1"
 image = "0.25"
 fastembed = "4"
 lancedb = { version = "0.31", default-features = false }
+arrow-array = "*"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 futures = "0.3"
 serde = { version = "1", features = ["derive"] }

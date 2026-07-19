@@ -4,16 +4,18 @@ mod ocr_extract;
 mod normalize;
 mod chunk;
 mod embed;
+mod vector_store;
 
 use crate::repositories::document::{Document, DocumentRepository};
 use crate::repositories::document_job::DocumentJobRepository;
 use crate::repositories::chunk::{Chunk, ChunkRepository};
+use vector_store::VectorRecord;
 use rusqlite::Connection;
 use chrono::Utc;
 use std::fs;
 use uuid::Uuid;
 
-pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String> {
+pub fn process_document(conn: &Connection, doc: &Document, app_data_dir: &std::path::Path) -> Result<(), String> {
     let advance = |stage: &str, error: Option<&str>| -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
         DocumentJobRepository::update_stage(conn, &doc.id, stage, error, &now)
@@ -84,7 +86,22 @@ pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String>
     let embeddings = embed::embed_texts(&chunk_texts)?;
 
     advance("indexing", None)?;
-    // LanceDB storage implementation arrives in a follow-up step
+    let db_path = app_data_dir.join("lancedb");
+    let db_path_str = db_path.to_string_lossy().to_string();
+
+    let vector_records: Vec<VectorRecord> = chunk_records
+        .iter()
+        .zip(embeddings.iter())
+        .map(|(chunk, embedding)| VectorRecord {
+            id: chunk.id.clone(),
+            document_id: chunk.document_id.clone(),
+            project_id: chunk.project_id.clone(),
+            content: chunk.content.clone(),
+            embedding: embedding.clone(),
+        })
+        .collect();
+
+    vector_store::store_embeddings(&db_path_str, &vector_records)?;
 
     advance("completed", None)?;
     DocumentRepository::update_status(conn, &doc.id, "ready").map_err(|e| e.to_string())?;

@@ -92,7 +92,7 @@ pub fn upload_document(
 
     // Synchronous for now — real background threading arrives once
     // slower extraction types (PDF/OCR) make blocking noticeable.
-    rag_engine::process_document(&conn, &doc)?;
+    rag_engine::process_document(&conn, &doc, &app_data_dir)?;
 
     Ok(doc)
 }
