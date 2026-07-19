@@ -3,6 +3,7 @@ mod office_extract;
 mod ocr_extract;
 mod normalize;
 mod chunk;
+mod embed;
 
 use crate::repositories::document::{Document, DocumentRepository};
 use crate::repositories::document_job::DocumentJobRepository;
@@ -79,7 +80,8 @@ pub fn process_document(conn: &Connection, doc: &Document) -> Result<(), String>
     ChunkRepository::create_many(conn, &chunk_records).map_err(|e| e.to_string())?;
 
     advance("embedding", None)?;
-    // Embedding implementation arrives in a follow-up step
+    let chunk_texts: Vec<String> = chunk_records.iter().map(|c| c.content.clone()).collect();
+    let embeddings = embed::embed_texts(&chunk_texts)?;
 
     advance("indexing", None)?;
     // LanceDB storage implementation arrives in a follow-up step
