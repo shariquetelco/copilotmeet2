@@ -10,7 +10,7 @@ use tauri::Manager;
 use commands::project::{create_project, list_projects, update_project, delete_project, set_active_project};
 use commands::settings::{get_setting, set_setting, get_all_settings, delete_setting, optimize_database};
 use commands::api_keys::{set_api_key, get_api_key, delete_api_key};
-use commands::document::{upload_document, list_documents, delete_document, get_project_storage, get_document_job, search_documents};
+use commands::document::{upload_document, list_documents, delete_document, get_project_storage, get_document_job, search_documents, build_answer_prompt};
 
 pub struct AppState {
     pub db: Mutex<Connection>,
@@ -62,7 +62,8 @@ pub fn run() {
             delete_document,
             get_project_storage,
             get_document_job,
-            search_documents
+            search_documents,
+            build_answer_prompt
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

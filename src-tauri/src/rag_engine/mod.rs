@@ -5,6 +5,7 @@ mod normalize;
 mod chunk;
 pub mod embed;
 pub mod vector_store;
+pub mod prompt_builder;
 
 use crate::repositories::document::{Document, DocumentRepository};
 use crate::repositories::document_job::DocumentJobRepository;

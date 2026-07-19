@@ -41,6 +41,14 @@ export const documentService = {
 
   search: (projectId: string, query: string, topK: number = 5): Promise<SearchResult[]> =>
     invoke("search_documents", { projectId, query, topK }),
+
+  buildAnswerPrompt: (
+    projectId: string,
+    question: string,
+    answerStyle: string,
+    meetingMode: string
+  ): Promise<string> =>
+    invoke("build_answer_prompt", { projectId, question, answerStyle, meetingMode }),
 };
 
 export interface SearchResult {
@@ -48,6 +56,10 @@ export interface SearchResult {
   document_id: string;
   content: string;
   distance: number;
+}
+
+if (import.meta.env.DEV) {
+  (window as any).documentService = documentService;
 }
 
 export interface DocumentJob {

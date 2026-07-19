@@ -134,6 +134,42 @@ pub fn search_documents(
 }
 
 #[tauri::command]
+pub fn build_answer_prompt(
+    app: AppHandle,
+    project_id: String,
+    question: String,
+    answer_style: String,
+    meeting_mode: String,
+) -> Result<String, String> {
+    let embed_start = std::time::Instant::now();
+    let query_embeddings = embed::embed_texts(&[question.clone()])?;
+    let query_vector = query_embeddings.get(0).ok_or("Failed to embed query")?;
+    println!("Embedding: {}ms", embed_start.elapsed().as_millis());
+
+    let search_start = std::time::Instant::now();
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("lancedb").to_string_lossy().to_string();
+    let results = rag_engine::vector_store::search(&db_path, query_vector, Some(&project_id), 1)?;
+    println!("Vector Search: {}ms", search_start.elapsed().as_millis());
+
+    let context = results
+        .get(0)
+        .map(|r| r.content.clone())
+        .unwrap_or_else(|| "No relevant information found in the uploaded documents.".to_string());
+
+    let build_start = std::time::Instant::now();
+    let prompt = rag_engine::prompt_builder::build_prompt(&rag_engine::prompt_builder::PromptContext {
+        question,
+        context,
+        answer_style,
+        meeting_mode,
+    });
+    println!("Prompt Build: {}ms", build_start.elapsed().as_millis());
+
+    Ok(prompt)
+}
+
+#[tauri::command]
 pub fn delete_document(state: State<AppState>, id: String, file_path: String) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     DocumentRepository::delete(&conn, &id).map_err(|e| e.to_string())?;
