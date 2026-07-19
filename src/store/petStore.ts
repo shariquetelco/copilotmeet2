@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { settingsService } from "@/lib/settingsService";
+import { documentService } from "@/lib/documentService";
+import { projectService } from "@/lib/projectService";
 
 export type PetStatus = "ready" | "standby" | "setup-required";
 export type PetState = "idle" | "thinking" | "answering";
@@ -40,6 +42,7 @@ interface PetStore {
   addQAEntry: (entry: Omit<QAEntry, "id" | "pinned" | "timestamp">) => void;
   togglePin: (id: string) => void;
   hydrate: () => Promise<void>;
+  askQuestion: (question: string) => Promise<void>;
 }
 
 export const usePetStore = create<PetStore>((set, get) => ({
@@ -92,6 +95,46 @@ export const usePetStore = create<PetStore>((set, get) => ({
         q.id === id ? { ...q, pinned: !q.pinned } : q
       ),
     })),
+
+  askQuestion: async (question: string) => {
+    const searchStart = performance.now();
+
+    const projects = await projectService.list();
+    const activeProject = projects.find((p) => p.is_active);
+
+    if (!activeProject) {
+      console.warn("No active project — cannot search for an answer.");
+      return;
+    }
+
+    const results = await documentService.search(activeProject.id, question, 1);
+    const searchMs = Math.round(performance.now() - searchStart);
+    console.log(`Search: ${searchMs}ms`);
+
+    const topResult = results[0];
+
+    if (!topResult) {
+      get().addQAEntry({
+        question,
+        ragAnswer: "I couldn't find that information in the uploaded documents.",
+        ragConfidence: 0,
+        llmAnswer: "",
+        llmConfidence: 0,
+      });
+      return;
+    }
+
+    // cosine distance ranges 0 (identical) to 2 (opposite) -> confidence %
+    const confidence = Math.round(Math.max(0, 1 - topResult.distance / 2) * 100);
+
+    get().addQAEntry({
+      question,
+      ragAnswer: topResult.content,
+      ragConfidence: confidence,
+      llmAnswer: "",
+      llmConfidence: 0,
+    });
+  },
 
   hydrate: async () => {
     const all = await settingsService.getAll();

@@ -1,5 +1,6 @@
 use lancedb::{connect, Connection, Table};
 use lancedb::query::{QueryBase, ExecutableQuery};
+use lancedb::DistanceType;
 use lancedb::arrow::arrow_schema::{DataType, Field, Schema};
 use arrow_array::{RecordBatch, RecordBatchIterator, RecordBatchReader, StringArray, FixedSizeListArray, Float32Array};
 use std::sync::Arc;
@@ -111,6 +112,10 @@ pub fn store_embeddings(db_path: &str, records: &[VectorRecord]) -> Result<(), S
 
 /// Searches for the top-K chunks most similar to the given embedding vector,
 /// optionally restricted to a single project.
+/// Cosine distances above this are treated as "not actually relevant" and
+/// filtered out, rather than returned as false-positive matches.
+const MAX_RELEVANT_DISTANCE: f32 = 0.95;
+
 pub fn search(
     db_path: &str,
     query_embedding: &[f32],
@@ -131,6 +136,7 @@ pub fn search(
             .query()
             .nearest_to(query_embedding)
             .map_err(|e| e.to_string())?
+            .distance_type(DistanceType::Cosine)
             .limit(top_k);
 
         if let Some(pid) = project_id {
@@ -174,6 +180,25 @@ pub fn search(
             }
         }
 
-        Ok(results)
+        println!("\n========== VECTOR SEARCH ==========");
+        println!("Threshold: {}", MAX_RELEVANT_DISTANCE);
+
+        for r in &results {
+            println!(
+                "Distance: {:.4} | Doc: {} | {}",
+                r.distance,
+                r.document_id,
+                r.content.chars().take(80).collect::<String>()
+            );
+        }
+
+        println!("===================================\n");
+
+        let relevant_results: Vec<SearchResult> = results
+            .into_iter()
+            .filter(|r| r.distance <= MAX_RELEVANT_DISTANCE)
+            .collect();
+
+        Ok(relevant_results)
     })
 }
