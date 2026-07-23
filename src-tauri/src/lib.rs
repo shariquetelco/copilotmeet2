@@ -3,6 +3,7 @@ mod repositories;
 mod commands;
 mod rag_engine;
 mod llm_engine;
+mod question_engine;
 
 use rusqlite::Connection;
 use std::sync::Mutex;
