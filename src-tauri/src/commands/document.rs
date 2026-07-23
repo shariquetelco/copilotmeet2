@@ -145,7 +145,7 @@ pub struct AskPetResponse {
 pub async fn ask_pet(
     app: AppHandle,
     state: State<'_, AppState>,
-    project_id: String,
+    project_id: Option<String>,
     question: String,
     answer_style: String,
     meeting_mode: String,
@@ -161,7 +161,7 @@ pub async fn ask_pet(
     let query_vector_owned = query_vector.clone();
     let project_id_owned = project_id.clone();
     let results = tokio::task::spawn_blocking(move || {
-        rag_engine::vector_store::search(&db_path, &query_vector_owned, Some(&project_id_owned), 1)
+        rag_engine::vector_store::search(&db_path, &query_vector_owned, project_id_owned.as_deref(), 1)
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -171,9 +171,9 @@ pub async fn ask_pet(
 
     let source_document_name = if let Some(doc_id) = &source_document_id {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        DocumentRepository::list_by_project(&conn, &project_id)
+        DocumentRepository::get_by_id(&conn, doc_id)
             .ok()
-            .and_then(|docs| docs.into_iter().find(|d| &d.id == doc_id))
+            .flatten()
             .map(|d| d.file_name)
     } else {
         None

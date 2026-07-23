@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePetStore, QAEntry } from "@/store/petStore";
+import { projectService } from "@/lib/projectService";
 import PetAvatar from "./PetAvatar";
 import { Pin, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
 
@@ -57,9 +58,7 @@ function QAEntryCard({
   return (
     <div
       className={`rounded-2xl p-4 ${
-        isLatest
-          ? "bg-[#EEF6FF] border-l-4 border-blue-500"
-          : "bg-[#F8F9FA]"
+        isLatest ? "bg-[#EEF6FF] border-l-4 border-blue-500" : "bg-[#F8F9FA]"
       } ${qa.pinned ? "ring-2 ring-primary" : ""}`}
     >
       <div
@@ -155,9 +154,17 @@ export default function PetWidget() {
     position: dockPosition,
     opacityIdle,
     askQuestion,
+    selectedProjectId,
+    setSelectedProjectId,
   } = usePetStore();
 
   const [manualQuestion, setManualQuestion] = useState("");
+  const [projects, setProjects] = useState<{ id: string; name: string; is_active: boolean }[]>([]);
+
+  useEffect(() => {
+    projectService.list().then(setProjects);
+  }, [expanded]);
+
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const toggleExpand = (id: string) => {
@@ -224,10 +231,7 @@ export default function PetWidget() {
     };
   }, [dragging, handleMouseMove, handleMouseUp]);
 
-  // newest first
   const orderedHistory = [...qaHistory].reverse();
-
-  // scroll position is left entirely to the user — no forced jumps
 
   const handleClick = () => {
     if (!moved) setExpanded(!expanded);
@@ -279,7 +283,35 @@ export default function PetWidget() {
               onMouseLeave={() => setHovering(false)}
               className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3"
             >
-              <div onClick={(e) => e.stopPropagation()} className="flex gap-2 mb-1">
+              <div
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="mb-2"
+              >
+                <select
+                  value={selectedProjectId ?? ""}
+                  onChange={(e) => setSelectedProjectId(e.target.value || null)}
+                  className="w-full border border-border rounded-lg px-3 py-1.5 text-[13px] bg-white text-muted-foreground"
+                >
+                  <option value="">
+                    {projects.find((p) => p.is_active)?.name
+                      ? `Active Project: ${projects.find((p) => p.is_active)?.name}`
+                      : "No active project"}
+                  </option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                  <option value="__all__">🌐 All Projects</option>
+                </select>
+              </div>
+
+              <div
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="flex gap-2 mb-1"
+              >
                 <input
                   value={manualQuestion}
                   onChange={(e) => setManualQuestion(e.target.value)}

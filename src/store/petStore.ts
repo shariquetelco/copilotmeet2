@@ -32,6 +32,7 @@ interface PetStore {
   opacityIdle: number;
   alwaysOnTop: boolean;
   hydrated: boolean;
+  selectedProjectId: string | null; // null = use active project, "__all__" = search everything
   setStatus: (status: PetStatus) => void;
   setState: (state: PetState) => void;
   setExpanded: (expanded: boolean) => void;
@@ -44,6 +45,7 @@ interface PetStore {
   togglePin: (id: string) => void;
   hydrate: () => Promise<void>;
   askQuestion: (question: string) => Promise<void>;
+  setSelectedProjectId: (id: string | null) => void;
 }
 
 export const usePetStore = create<PetStore>((set, get) => ({
@@ -97,14 +99,27 @@ export const usePetStore = create<PetStore>((set, get) => ({
       ),
     })),
 
+  setSelectedProjectId: (id) => set({ selectedProjectId: id }),
+
   askQuestion: async (question: string) => {
     const projects = await projectService.list();
     const activeProject = projects.find((p) => p.is_active);
+    const { selectedProjectId } = get();
 
-    if (!activeProject) {
+    if (!activeProject && selectedProjectId !== "__all__") {
       console.warn("No active project — cannot answer.");
       return;
     }
+
+    const meetingMode =
+      selectedProjectId && selectedProjectId !== "__all__"
+        ? projects.find((p) => p.id === selectedProjectId)?.meeting_mode ?? "Interview"
+        : activeProject?.meeting_mode ?? "Interview";
+
+    const projectIdToSearch =
+      selectedProjectId === "__all__"
+        ? undefined
+        : selectedProjectId ?? activeProject?.id;
 
     const answerStyle = await settingsService.get("general.answer_style");
 
@@ -115,10 +130,10 @@ export const usePetStore = create<PetStore>((set, get) => ({
       const response = await invoke<{ answer: string; source_document: string | null }>(
         "ask_pet",
         {
-          projectId: activeProject.id,
+          projectId: projectIdToSearch,
           question,
           answerStyle: answerStyle || "Professional",
-          meetingMode: activeProject.meeting_mode,
+          meetingMode,
         }
       );
 

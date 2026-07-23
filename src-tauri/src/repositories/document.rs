@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params, Result};
+use rusqlite::{Connection, params, Result, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -67,6 +67,27 @@ impl DocumentRepository {
             params![status, id],
         )?;
         Ok(())
+    }
+
+    pub fn get_by_id(conn: &Connection, id: &str) -> Result<Option<Document>> {
+        conn.query_row(
+            "SELECT id, project_id, file_name, file_path, file_size_bytes, file_type, status, created_at
+             FROM documents WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(Document {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    file_name: row.get(2)?,
+                    file_path: row.get(3)?,
+                    file_size_bytes: row.get(4)?,
+                    file_type: row.get(5)?,
+                    status: row.get(6)?,
+                    created_at: row.get(7)?,
+                })
+            },
+        )
+        .optional()
     }
 
     pub fn total_size_for_project(conn: &Connection, project_id: &str) -> Result<i64> {
