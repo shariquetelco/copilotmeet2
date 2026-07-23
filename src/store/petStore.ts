@@ -97,43 +97,46 @@ export const usePetStore = create<PetStore>((set, get) => ({
     })),
 
   askQuestion: async (question: string) => {
-    const searchStart = performance.now();
-
     const projects = await projectService.list();
     const activeProject = projects.find((p) => p.is_active);
 
     if (!activeProject) {
-      console.warn("No active project — cannot search for an answer.");
+      console.warn("No active project — cannot answer.");
       return;
     }
 
-    const results = await documentService.search(activeProject.id, question, 1);
-    const searchMs = Math.round(performance.now() - searchStart);
-    console.log(`Search: ${searchMs}ms`);
+    const answerStyle = await settingsService.get("general.answer_style");
 
-    const topResult = results[0];
+    set({ state: "thinking" });
 
-    if (!topResult) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const answer = await invoke<string>("ask_pet", {
+        projectId: activeProject.id,
+        question,
+        answerStyle: answerStyle || "Professional",
+        meetingMode: activeProject.meeting_mode,
+      });
+
       get().addQAEntry({
         question,
-        ragAnswer: "I couldn't find that information in the uploaded documents.",
+        ragAnswer: answer,
+        ragConfidence: 100,
+        llmAnswer: "",
+        llmConfidence: 0,
+      });
+    } catch (err) {
+      get().addQAEntry({
+        question,
+        ragAnswer: `Error: ${err}`,
         ragConfidence: 0,
         llmAnswer: "",
         llmConfidence: 0,
       });
-      return;
+    } finally {
+      set({ state: "answering" });
+      setTimeout(() => set({ state: "idle" }), 2000);
     }
-
-    // cosine distance ranges 0 (identical) to 2 (opposite) -> confidence %
-    const confidence = Math.round(Math.max(0, 1 - topResult.distance / 2) * 100);
-
-    get().addQAEntry({
-      question,
-      ragAnswer: topResult.content,
-      ragConfidence: confidence,
-      llmAnswer: "",
-      llmConfidence: 0,
-    });
   },
 
   hydrate: async () => {
