@@ -135,6 +135,12 @@ pub fn search_documents(
     rag_engine::vector_store::search(&db_path, query_vector, Some(&project_id), top_k)
 }
 
+#[derive(serde::Serialize)]
+pub struct AskPetResponse {
+    pub answer: String,
+    pub source_document: Option<String>,
+}
+
 #[tauri::command]
 pub async fn ask_pet(
     app: AppHandle,
@@ -143,7 +149,7 @@ pub async fn ask_pet(
     question: String,
     answer_style: String,
     meeting_mode: String,
-) -> Result<String, String> {
+) -> Result<AskPetResponse, String> {
     let embed_start = std::time::Instant::now();
     let query_embeddings = embed::embed_texts(&[question.clone()])?;
     let query_vector = query_embeddings.get(0).ok_or("Failed to embed query")?;
@@ -161,16 +167,28 @@ pub async fn ask_pet(
     .map_err(|e| e.to_string())??;
     println!("Vector Search: {}ms", search_start.elapsed().as_millis());
 
+    let source_document_id = results.get(0).map(|r| r.document_id.clone());
+
+    let source_document_name = if let Some(doc_id) = &source_document_id {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        DocumentRepository::list_by_project(&conn, &project_id)
+            .ok()
+            .and_then(|docs| docs.into_iter().find(|d| &d.id == doc_id))
+            .map(|d| d.file_name)
+    } else {
+        None
+    };
+
     let context = results
         .get(0)
         .map(|r| r.content.clone())
         .unwrap_or_else(|| "No relevant information found in the uploaded documents.".to_string());
 
     let prompt = rag_engine::prompt_builder::build_prompt(&rag_engine::prompt_builder::PromptContext {
-        question,
+        question: question.clone(),
         context,
-        answer_style,
-        meeting_mode,
+        answer_style: answer_style.clone(),
+        meeting_mode: meeting_mode.clone(),
     });
 
     let api_key = {
@@ -184,7 +202,26 @@ pub async fn ask_pet(
     let answer = llm_engine::ask_groq(&api_key, &prompt).await?;
     println!("Groq: {}ms", llm_start.elapsed().as_millis());
 
-    Ok(answer)
+    if answer.trim() == rag_engine::prompt_builder::NOT_FOUND_PHRASE {
+        let fallback_start = std::time::Instant::now();
+        let fallback_prompt =
+            rag_engine::prompt_builder::build_general_prompt(&question, &answer_style, &meeting_mode);
+        let fallback_answer = llm_engine::ask_groq(&api_key, &fallback_prompt).await?;
+        println!("Groq (fallback): {}ms", fallback_start.elapsed().as_millis());
+
+        return Ok(AskPetResponse {
+            answer: format!(
+                "My documents don't contain this information. Based on general knowledge:\n\n{}",
+                fallback_answer
+            ),
+            source_document: None,
+        });
+    }
+
+    Ok(AskPetResponse {
+        answer,
+        source_document: source_document_name,
+    })
 }
 
 #[tauri::command]
@@ -213,10 +250,10 @@ pub fn build_answer_prompt(
 
     let build_start = std::time::Instant::now();
     let prompt = rag_engine::prompt_builder::build_prompt(&rag_engine::prompt_builder::PromptContext {
-        question,
+        question: question.clone(),
         context,
-        answer_style,
-        meeting_mode,
+        answer_style: answer_style.clone(),
+        meeting_mode: meeting_mode.clone(),
     });
     println!("Prompt Build: {}ms", build_start.elapsed().as_millis());
 

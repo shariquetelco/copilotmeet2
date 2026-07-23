@@ -4,6 +4,18 @@ import { usePetStore, QAEntry } from "@/store/petStore";
 import PetAvatar from "./PetAvatar";
 import { Pin, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
 
+const FALLBACK_PREFIX = "My documents don't contain this information. Based on general knowledge:";
+
+function splitFallbackAnswer(answer: string): { prefix: string | null; body: string } {
+  if (answer.startsWith(FALLBACK_PREFIX)) {
+    return {
+      prefix: FALLBACK_PREFIX,
+      body: answer.slice(FALLBACK_PREFIX.length).trim(),
+    };
+  }
+  return { prefix: null, body: answer };
+}
+
 function highlightKeywords(question: string, answer: string) {
   const stopwords = new Set(["the", "a", "an", "is", "are", "what", "how", "why", "does", "do", "of", "to", "in", "on", "for", "and", "or"]);
   const keywords = Array.from(
@@ -43,7 +55,13 @@ function QAEntryCard({
   onTogglePin: () => void;
 }) {
   return (
-    <div className={`rounded-2xl p-4 bg-white ${qa.pinned ? "ring-2 ring-primary" : ""}`}>
+    <div
+      className={`rounded-2xl p-4 ${
+        isLatest
+          ? "bg-[#EEF6FF] border-l-4 border-blue-500"
+          : "bg-[#F8F9FA]"
+      } ${qa.pinned ? "ring-2 ring-primary" : ""}`}
+    >
       <div
         className="flex items-start justify-between gap-3 cursor-pointer"
         onClick={(e) => {
@@ -76,13 +94,28 @@ function QAEntryCard({
 
       {isExpanded && (
         <>
+          {qa.sourceDocument && (
+            <div className="mt-2 text-[12px] text-muted-foreground flex items-center gap-1">
+              📄 Source: {qa.sourceDocument}
+            </div>
+          )}
           <div className="mt-3 pt-3 border-t border-border/60">
             <p
               className={`text-[15px] leading-snug break-words ${
                 isLatest ? "text-blue-700" : "text-neutral-900"
               }`}
             >
-              {highlightKeywords(qa.question, qa.ragAnswer)}
+              {(() => {
+                const { prefix, body } = splitFallbackAnswer(qa.ragAnswer);
+                return (
+                  <>
+                    {prefix && (
+                      <span className="block italic text-gray-400 mb-2">{prefix}</span>
+                    )}
+                    {highlightKeywords(qa.question, body)}
+                  </>
+                );
+              })()}
             </p>
           </div>
 

@@ -13,6 +13,7 @@ export interface QAEntry {
   ragConfidence: number;
   llmAnswer: string;
   llmConfidence: number;
+  sourceDocument?: string;
   pinned: boolean;
   timestamp: number;
 }
@@ -111,19 +112,23 @@ export const usePetStore = create<PetStore>((set, get) => ({
 
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const answer = await invoke<string>("ask_pet", {
-        projectId: activeProject.id,
-        question,
-        answerStyle: answerStyle || "Professional",
-        meetingMode: activeProject.meeting_mode,
-      });
+      const response = await invoke<{ answer: string; source_document: string | null }>(
+        "ask_pet",
+        {
+          projectId: activeProject.id,
+          question,
+          answerStyle: answerStyle || "Professional",
+          meetingMode: activeProject.meeting_mode,
+        }
+      );
 
       get().addQAEntry({
         question,
-        ragAnswer: answer,
+        ragAnswer: response.answer,
         ragConfidence: 100,
         llmAnswer: "",
         llmConfidence: 0,
+        sourceDocument: response.source_document ?? undefined,
       });
     } catch (err) {
       get().addQAEntry({
