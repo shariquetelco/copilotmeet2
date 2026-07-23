@@ -1274,6 +1274,7 @@ dependencies = [
  "image",
  "lancedb",
  "pdfium-render",
+ "reqwest 0.12.28",
  "rusqlite",
  "rusty-tesseract",
  "serde",

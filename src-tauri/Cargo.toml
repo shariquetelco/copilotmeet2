@@ -26,6 +26,7 @@ dotext = "0.1"
 rusty-tesseract = "1.1"
 image = "0.25"
 fastembed = "4"
+reqwest = { version = "0.12", features = ["json"] }
 lancedb = { version = "0.31", default-features = false }
 arrow-array = "*"
 tokio = { version = "1", features = ["rt-multi-thread"] }

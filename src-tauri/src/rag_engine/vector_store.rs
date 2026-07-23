@@ -116,14 +116,25 @@ pub fn store_embeddings(db_path: &str, records: &[VectorRecord]) -> Result<(), S
 /// filtered out, rather than returned as false-positive matches.
 const MAX_RELEVANT_DISTANCE: f32 = 0.95;
 
+/// Sync wrapper for callers that aren't already inside an async runtime.
 pub fn search(
     db_path: &str,
     query_embedding: &[f32],
     project_id: Option<&str>,
     top_k: usize,
 ) -> Result<Vec<SearchResult>, String> {
-    runtime().block_on(async {
-        let conn = open_db(db_path).await?;
+    runtime().block_on(search_async(db_path, query_embedding, project_id, top_k))
+}
+
+/// Async version for callers already running inside an async context
+/// (e.g. a Tauri async command) — never wrap this in block_on.
+pub async fn search_async(
+    db_path: &str,
+    query_embedding: &[f32],
+    project_id: Option<&str>,
+    top_k: usize,
+) -> Result<Vec<SearchResult>, String> {
+    let conn = open_db(db_path).await?;
 
         let table_names = conn.table_names().execute().await.map_err(|e| e.to_string())?;
         if !table_names.iter().any(|n| n == "chunks") {
@@ -200,5 +211,4 @@ pub fn search(
             .collect();
 
         Ok(relevant_results)
-    })
 }
