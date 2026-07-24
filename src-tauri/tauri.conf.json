@@ -10,11 +10,26 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "copilotmeet2",
         "width": 800,
         "height": 600
+      },
+      {
+        "label": "pet",
+        "title": "CopilotMeet",
+        "url": "index.html",
+        "width": 100,
+        "height": 100,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "shadow": false
       }
     ],
     "security": {

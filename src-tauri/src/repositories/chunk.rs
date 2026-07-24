@@ -32,6 +32,26 @@ impl ChunkRepository {
         Ok(())
     }
 
+    pub fn list_by_project(conn: &Connection, project_id: &str) -> Result<Vec<Chunk>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, document_id, project_id, chunk_index, content, created_at
+             FROM chunks WHERE project_id = ?1",
+        )?;
+
+        let rows = stmt.query_map(params![project_id], |row| {
+            Ok(Chunk {
+                id: row.get(0)?,
+                document_id: row.get(1)?,
+                project_id: row.get(2)?,
+                chunk_index: row.get(3)?,
+                content: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })?;
+
+        rows.collect()
+    }
+
     pub fn list_by_document(conn: &Connection, document_id: &str) -> Result<Vec<Chunk>> {
         let mut stmt = conn.prepare(
             "SELECT id, document_id, project_id, chunk_index, content, created_at

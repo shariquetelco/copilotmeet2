@@ -3,6 +3,7 @@ mod office_extract;
 mod ocr_extract;
 mod normalize;
 mod chunk;
+pub mod keyterms;
 pub mod embed;
 pub mod vector_store;
 pub mod prompt_builder;

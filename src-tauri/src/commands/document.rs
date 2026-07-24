@@ -6,7 +6,7 @@ use crate::rag_engine::embed;
 use crate::repositories::api_keys::ApiKeyRepository;
 use crate::llm_engine;
 use crate::AppState;
-use tauri::{State, Manager, AppHandle};
+use tauri::{State, Manager, AppHandle, Emitter};
 use uuid::Uuid;
 use chrono::Utc;
 use std::fs;
@@ -222,7 +222,12 @@ pub async fn ask_pet(
     };
 
     let llm_start = std::time::Instant::now();
-    let answer = llm_engine::ask(provider, &api_key, &prompt).await?;
+    let app_for_stream = app.clone();
+    let answer = llm_engine::ask_stream(provider, &api_key, &prompt, move |token| {
+        let _ = app_for_stream.emit("answer_chunk", token);
+    })
+    .await?;
+    let _ = app.emit("answer_done", ());
     println!("{}: {}ms", provider.as_str(), llm_start.elapsed().as_millis());
 
     Ok(AskPetResponse {

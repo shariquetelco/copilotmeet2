@@ -54,6 +54,7 @@ pub fn build_prompt(ctx: &PromptContext) -> String {
         Use the context below as your primary source of truth. If it answers the question, base your answer on it directly.\n\
         If the context is incomplete or missing relevant details, use your own knowledge to fill the gap, and briefly note which part of your answer comes from general knowledge rather than the documents.\n\
         Never contradict the context with outside knowledge.\n\n\
+        FORMAT: Start with a 3-4 sentence summary. Then a blank line, then the key supporting details as short bullet points, each starting with \"- \". One idea per bullet. Do not use asterisks, headers, or any other markdown, plain text and \"- \" bullets only.\n\n\
         {}\n{}\n\n\
         Context:\n{}\n\n\
         Question:\n{}",
