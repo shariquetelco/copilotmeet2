@@ -65,36 +65,121 @@ async fn start_meeting_session(app: tauri::AppHandle, state: State<'_, AppState>
         Vec::new()
     };
 
-    let capture = audio_engine::start_capture()?;
-    let stop_capture = capture.stopper();
-
-    let (mut rx, tasks) = stt_engine::deepgram::start_transcription(capture, api_key, keyterms).await?;
-
-    {
-        let mut session = state.audio_session.lock().map_err(|e| e.to_string())?;
-        *session = Some(AudioSession {
-            stop_capture: Box::new(stop_capture),
-            tasks,
-        });
-    }
-
-    tauri::async_runtime::spawn(async move {
-        while let Some(e) = rx.recv().await {
-            if e.is_final {
-                println!("Final:\n{}", e.text);
-                let decision = question_engine::classify(&e.text);
-                if decision.classification == question_engine::QuestionClassification::RealQuestion {
-                    println!("🎯 Question detected (confidence {:.2}): {}", decision.confidence, e.text);
-                    let _ = app.emit("question_detected", &e.text);
-                }
-            } else {
-                println!("Partial:\n{}", e.text);
-            }
-        }
-        println!("Transcript stream ended.");
-    });
+    tauri::async_runtime::spawn(run_session_with_reconnect(app, api_key, keyterms));
 
     Ok(())
+}
+
+/// Runs one capture+transcription session. If the underlying audio device
+/// changes mid-meeting (headphones unplugged, etc.), the current session
+/// can't just keep going — Deepgram's audio format is locked in for the
+/// life of its connection — so this cleanly restarts capture and Deepgram
+/// against whatever the new default device is, up to a few attempts,
+/// before giving up and telling the UI it's genuinely disconnected.
+async fn run_session_with_reconnect(app: tauri::AppHandle, api_key: String, keyterms: Vec<String>) {
+    const MAX_RECONNECT_ATTEMPTS: u32 = 3;
+    let mut attempt = 0;
+
+    loop {
+        let capture = match audio_engine::start_capture() {
+            Ok(c) => c,
+            Err(e) => {
+                println!("Failed to start audio capture: {}", e);
+                let _ = app.emit("audio_disconnected", ());
+                return;
+            }
+        };
+        let stop_capture = capture.stopper();
+        let device_changed_rx = capture.device_changed;
+        let audio_receiver = capture.receiver;
+
+        let (mut rx, tasks) = match stt_engine::deepgram::start_transcription(
+            audio_receiver,
+            api_key.clone(),
+            keyterms.clone(),
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                println!("Failed to start Deepgram: {}", e);
+                let _ = app.emit("audio_disconnected", ());
+                return;
+            }
+        };
+
+        {
+            let state = app.state::<AppState>();
+            let mut session = state.audio_session.lock().unwrap();
+            *session = Some(AudioSession {
+                stop_capture: Box::new(stop_capture),
+                tasks,
+            });
+        }
+
+        if attempt > 0 {
+            let _ = app.emit("audio_reconnected", ());
+        }
+        attempt = 0;
+
+        let (dc_tx, mut dc_rx) = tokio::sync::oneshot::channel::<()>();
+        std::thread::spawn(move || {
+            if device_changed_rx.recv().is_ok() {
+                let _ = dc_tx.send(());
+            }
+        });
+
+        loop {
+            tokio::select! {
+                event = rx.recv() => {
+                    match event {
+                        Some(e) => {
+                            if e.is_final {
+                                println!("Final:\n{}", e.text);
+                                let decision = question_engine::classify(&e.text);
+                                if decision.classification == question_engine::QuestionClassification::RealQuestion {
+                                    println!("🎯 Question detected (confidence {:.2}): {}", decision.confidence, e.text);
+                                    let _ = app.emit("question_detected", &e.text);
+                                }
+                            } else {
+                                println!("Partial:\n{}", e.text);
+                            }
+                        }
+                        None => {
+                            println!("Transcript stream ended.");
+                            return;
+                        }
+                    }
+                }
+                _ = &mut dc_rx => {
+                    println!("Audio device changed, reconnecting...");
+                    break;
+                }
+            }
+        }
+
+        {
+            let state = app.state::<AppState>();
+            let mut session = state.audio_session.lock().unwrap();
+            if let Some(s) = session.take() {
+                (s.stop_capture)();
+                for task in s.tasks {
+                    task.abort();
+                }
+            }
+        }
+
+        let _ = app.emit("audio_reconnecting", ());
+        attempt += 1;
+
+        if attempt > MAX_RECONNECT_ATTEMPTS {
+            println!("Giving up after {} reconnect attempts.", MAX_RECONNECT_ATTEMPTS);
+            let _ = app.emit("audio_disconnected", ());
+            return;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
 }
 
 #[tauri::command]
@@ -122,7 +207,7 @@ async fn test_deepgram_transcription(state: State<'_, AppState>, seconds: u64) -
     let capture = audio_engine::start_capture()?;
     let stop = capture.stopper();
 
-    let (mut rx, _tasks) = stt_engine::deepgram::start_transcription(capture, api_key, Vec::new()).await?;
+    let (mut rx, _tasks) = stt_engine::deepgram::start_transcription(capture.receiver, api_key, Vec::new()).await?;
 
     let mut finals = Vec::new();
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(seconds);

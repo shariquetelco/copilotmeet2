@@ -1,4 +1,4 @@
-use crate::audio_engine::CaptureHandle;
+use crate::audio_engine::AudioFrame;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
@@ -43,7 +43,7 @@ fn f32_bytes_to_i16_bytes(data: &[u8]) -> Vec<u8> {
 }
 
 pub async fn start_transcription(
-    capture: CaptureHandle,
+    capture_receiver: std::sync::mpsc::Receiver<AudioFrame>,
     api_key: String,
     keyterms: Vec<String>,
 ) -> Result<(UnboundedReceiver<TranscriptEvent>, Vec<tokio::task::JoinHandle<()>>), String> {
@@ -51,7 +51,6 @@ pub async fn start_transcription(
     let (format_tx, format_rx) = oneshot::channel::<(u32, u16)>();
     let (audio_tx, mut audio_rx) = unbounded_channel::<Vec<u8>>();
 
-    let capture_receiver = capture.receiver;
     std::thread::spawn(move || {
         let mut format_tx = Some(format_tx);
         while let Ok(frame) = capture_receiver.recv() {
@@ -70,7 +69,7 @@ pub async fn start_transcription(
         .map_err(|_| "Audio capture stopped before any frames arrived".to_string())?;
 
     let mut url = format!(
-        "wss://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&sample_rate={}&channels={}&punctuate=true&interim_results=true",
+        "wss://api.deepgram.com/v1/listen?model=nova-2&encoding=linear16&sample_rate={}&channels={}&punctuate=true&interim_results=true&smart_format=true&endpointing=300&utterance_end_ms=1000",
         sample_rate, channels
     );
 

@@ -44,10 +44,23 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       if (!paths || paths.length === 0) return;
 
       set({ loading: true, error: null });
+
+      const failures: string[] = [];
       for (const path of paths) {
-        await documentService.upload(projectId, path);
+        try {
+          await documentService.upload(projectId, path);
+        } catch (err) {
+          // Don't let one bad file stop the rest, and always refresh
+          // the list/storage after, whether this file succeeded or not.
+          failures.push(String(err));
+        }
       }
+
       await get().fetchDocuments(projectId);
+      set({
+        loading: false,
+        error: failures.length > 0 ? failures.join(" | ") : null,
+      });
     } catch (err) {
       set({ error: String(err), loading: false });
     }

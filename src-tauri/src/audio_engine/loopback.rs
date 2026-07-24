@@ -4,35 +4,40 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, Instant};
 use wasapi::{initialize_mta, DeviceEnumerator, Direction, StreamMode};
 
-/// Starts a background thread capturing WASAPI loopback audio (system
-/// output — "the other side" of a call, not the microphone) and streams
-/// it out as AudioFrame chunks until CaptureHandle::stop() is called.
 pub fn start_wasapi_loopback() -> Result<CaptureHandle, String> {
     let (tx, rx) = mpsc::channel();
+    let (dc_tx, dc_rx) = mpsc::channel();
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_thread = stop_flag.clone();
 
     thread::Builder::new()
         .name("AudioCapture".to_string())
         .spawn(move || {
-            if let Err(e) = capture_loop(tx, stop_flag_thread) {
+            if let Err(e) = capture_loop(tx, dc_tx, stop_flag_thread) {
                 eprintln!("Audio capture error: {}", e);
             }
         })
         .map_err(|e| e.to_string())?;
 
-    Ok(CaptureHandle::new(rx, stop_flag))
+    Ok(CaptureHandle::new(rx, dc_rx, stop_flag))
 }
 
-fn capture_loop(tx: Sender<AudioFrame>, stop_flag: Arc<AtomicBool>) -> Result<(), String> {
+fn capture_loop(
+    tx: Sender<AudioFrame>,
+    device_changed_tx: Sender<()>,
+    stop_flag: Arc<AtomicBool>,
+) -> Result<(), String> {
     initialize_mta().ok().map_err(|e| e.to_string())?;
 
     let enumerator = DeviceEnumerator::new().map_err(|e| e.to_string())?;
     let device = enumerator
         .get_default_device(&Direction::Render)
         .map_err(|e| e.to_string())?;
+    let original_device_id = device.get_id().map_err(|e| e.to_string())?;
+
     let mut audio_client = device.get_iaudioclient().map_err(|e| e.to_string())?;
 
     let desired_format = audio_client.get_mixformat().map_err(|e| e.to_string())?;
@@ -56,6 +61,9 @@ fn capture_loop(tx: Sender<AudioFrame>, stop_flag: Arc<AtomicBool>) -> Result<()
 
     audio_client.start_stream().map_err(|e| e.to_string())?;
 
+    let mut last_device_check = Instant::now();
+    let device_check_interval = Duration::from_secs(3);
+
     while !stop_flag.load(Ordering::SeqCst) {
         capture_client
             .read_from_device_to_deque(&mut sample_queue)
@@ -74,7 +82,25 @@ fn capture_loop(tx: Sender<AudioFrame>, stop_flag: Arc<AtomicBool>) -> Result<()
             }
         }
 
+        if last_device_check.elapsed() >= device_check_interval {
+            last_device_check = Instant::now();
+            let current_default_id = DeviceEnumerator::new()
+                .ok()
+                .and_then(|e| e.get_default_device(&Direction::Render).ok())
+                .and_then(|d| d.get_id().ok());
+
+            if let Some(current_id) = current_default_id {
+                if current_id != original_device_id {
+                    println!("Default audio output device changed, ending this capture.");
+                    let _ = device_changed_tx.send(());
+                    break;
+                }
+            }
+        }
+
         if h_event.wait_for_event(3000).is_err() {
+            println!("Audio event wait failed (device likely disconnected).");
+            let _ = device_changed_tx.send(());
             break;
         }
     }
@@ -83,15 +109,13 @@ fn capture_loop(tx: Sender<AudioFrame>, stop_flag: Arc<AtomicBool>) -> Result<()
     Ok(())
 }
 
-/// Quick manual test: captures for N seconds and returns total bytes,
-/// proving the Audio Engine abstraction works end to end.
 pub fn test_capture(seconds: u64) -> Result<usize, String> {
     let handle = start_wasapi_loopback()?;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    let deadline = Instant::now() + Duration::from_secs(seconds);
 
     let mut total_bytes = 0usize;
-    while std::time::Instant::now() < deadline {
-        match handle.receiver.recv_timeout(std::time::Duration::from_millis(500)) {
+    while Instant::now() < deadline {
+        match handle.receiver.recv_timeout(Duration::from_millis(500)) {
             Ok(frame) => total_bytes += frame.data.len(),
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,

@@ -94,12 +94,25 @@ pub fn upload_document(
     };
     DocumentJobRepository::create(&conn, &job).map_err(|e| e.to_string())?;
 
-    // Synchronous for now — real background threading arrives once
+   // Synchronous for now — real background threading arrives once
     // slower extraction types (PDF/OCR) make blocking noticeable.
-    rag_engine::process_document(&conn, &doc, &app_data_dir)?;
+    if let Err(e) = rag_engine::process_document(&conn, &doc, &app_data_dir) {
+        // Don't leave a broken, half-processed document counting against
+        // the user's storage quota with no way to see or remove it —
+        // clean up everything this upload created and surface the reason.
+        let _ = DocumentRepository::delete(&conn, &doc.id);
+        let _ = DocumentJobRepository::delete_by_document(&conn, &doc.id);
+        let _ = fs::remove_file(&dest_path);
+
+        let _ = app.emit("document_upload_failed", (&doc.file_name, &e));
+
+        return Err(format!("Failed to process \"{}\": {}", doc.file_name, e));
+    }
+
+    let _ = app.emit("document_upload_complete", ());
 
     Ok(doc)
-}
+} 
 
 #[tauri::command]
 pub fn list_documents(state: State<AppState>, project_id: String) -> Result<Vec<Document>, String> {
@@ -149,6 +162,7 @@ pub async fn ask_pet(
     question: String,
     answer_style: String,
     meeting_mode: String,
+    recent_history: Option<Vec<(String, String)>>,
 ) -> Result<AskPetResponse, String> {
     let embed_start = std::time::Instant::now();
     let query_embeddings = embed::embed_texts(&[question.clone()])?;
@@ -189,6 +203,7 @@ pub async fn ask_pet(
         context,
         answer_style: answer_style.clone(),
         meeting_mode: meeting_mode.clone(),
+        recent_history: recent_history.unwrap_or_default(),
     });
 
     let (provider, api_key) = {
@@ -266,6 +281,7 @@ pub fn build_answer_prompt(
         context,
         answer_style: answer_style.clone(),
         meeting_mode: meeting_mode.clone(),
+        recent_history: Vec::new(),
     });
     println!("Prompt Build: {}ms", build_start.elapsed().as_millis());
 

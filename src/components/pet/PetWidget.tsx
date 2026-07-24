@@ -103,9 +103,14 @@ function QAEntryCard({
               {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </span>
           )}
-          <p className="text-[17px] font-bold text-red-600 leading-snug break-words">
-            {qa.question}
-          </p>
+          <div>
+            {qa.isFollowUp && (
+              <span className="text-[11px] text-blue-500 font-medium">🔗 following up</span>
+            )}
+            <p className="text-[17px] font-bold text-red-600 leading-snug break-words">
+              {qa.question}
+            </p>
+          </div>
         </div>
         <button
           onClick={(e) => {
@@ -189,6 +194,7 @@ export default function PetWidget() {
     sessionStatus,
     questionsDetected,
     toggleListening,
+    toast,
   } = usePetStore();
 
   const [manualQuestion, setManualQuestion] = useState("");
@@ -338,13 +344,21 @@ export default function PetWidget() {
                 </select>
               </div>
 
+              {toast && (
+                <div className="mb-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-[13px] text-blue-700">
+                  {toast}
+                </div>
+              )}
+
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   toggleListening();
                 }}
                 className={`w-full rounded-xl px-4 py-3 mb-3 text-left transition-colors ${
-                  listening
+                  sessionStatus === "Audio disconnected"
+                    ? "bg-orange-50 border border-orange-200"
+                    : listening
                     ? "bg-red-50 border border-red-200"
                     : "bg-green-50 border border-green-200"
                 }`}

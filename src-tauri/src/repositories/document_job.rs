@@ -37,6 +37,14 @@ impl DocumentJobRepository {
         Ok(())
     }
 
+    pub fn delete_by_document(conn: &Connection, document_id: &str) -> Result<()> {
+        conn.execute(
+            "DELETE FROM document_jobs WHERE document_id = ?1",
+            params![document_id],
+        )?;
+        Ok(())
+    }
+
     pub fn get_by_document(conn: &Connection, document_id: &str) -> Result<Option<DocumentJob>> {
         conn.query_row(
             "SELECT id, document_id, stage, error, created_at, updated_at

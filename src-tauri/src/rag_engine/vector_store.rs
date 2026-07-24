@@ -114,7 +114,7 @@ pub fn store_embeddings(db_path: &str, records: &[VectorRecord]) -> Result<(), S
 /// optionally restricted to a single project.
 /// Cosine distances above this are treated as "not actually relevant" and
 /// filtered out, rather than returned as false-positive matches.
-const MAX_RELEVANT_DISTANCE: f32 = 0.95;
+const MAX_RELEVANT_DISTANCE: f32 = 0.70;
 
 /// Sync wrapper for callers that aren't already inside an async runtime.
 pub fn search(

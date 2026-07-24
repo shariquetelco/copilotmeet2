@@ -3,6 +3,21 @@ import { settingsService } from "@/lib/settingsService";
 import { documentService } from "@/lib/documentService";
 import { projectService } from "@/lib/projectService";
 
+function questionOverlapsWith(a: string, b: string): boolean {
+  if (!b) return false;
+  const stopwords = new Set(["the", "a", "an", "is", "are", "what", "how", "why", "does", "do", "of", "to", "in", "on", "for", "and", "or", "about"]);
+  const words = (s: string) =>
+    new Set(s.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !stopwords.has(w)));
+  const wa = words(a);
+  const wb = words(b);
+  if (wa.size === 0 || wb.size === 0) return false;
+  let overlap = 0;
+  wa.forEach((w) => {
+    if (wb.has(w)) overlap++;
+  });
+  return overlap / Math.min(wa.size, wb.size) >= 0.3;
+}
+
 export type PetStatus = "ready" | "standby" | "setup-required";
 export type PetState = "idle" | "thinking" | "answering";
 export type SessionStatus =
@@ -10,6 +25,8 @@ export type SessionStatus =
   | "Connecting..."
   | "Listening..."
   | "Question detected"
+  | "Reconnecting audio..."
+  | "Audio disconnected"
   | "Error";
 
 export interface QAEntry {
@@ -22,6 +39,7 @@ export interface QAEntry {
   sourceDocument?: string;
   pinned: boolean;
   timestamp: number;
+  isFollowUp?: boolean;
 }
 
 export type PetSize = "small" | "medium" | "large";
@@ -44,6 +62,8 @@ interface PetStore {
   sessionStatus: SessionStatus;
   questionsDetected: number;
   toggleListening: () => Promise<void>;
+  toast: string | null;
+  showToast: (message: string) => void;
   setStatus: (status: PetStatus) => void;
   setState: (state: PetState) => void;
   setExpanded: (expanded: boolean) => void;
@@ -71,6 +91,7 @@ export const usePetStore = create<PetStore>((set, get) => ({
   alwaysOnTop: true,
   hydrated: false,
   streamingEntryId: null,
+  toast: null,
   listening: false,
   sessionStatus: "Stopped" as SessionStatus,
   questionsDetected: 0,
@@ -115,6 +136,13 @@ export const usePetStore = create<PetStore>((set, get) => ({
     })),
 
   setSelectedProjectId: (id) => set({ selectedProjectId: id }),
+
+  showToast: (message) => {
+    set({ toast: message });
+    setTimeout(() => {
+      usePetStore.setState((s) => (s.toast === message ? { toast: null } : s));
+    }, 4000);
+  },
 
   toggleListening: async () => {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -171,6 +199,9 @@ export const usePetStore = create<PetStore>((set, get) => ({
     set({ state: "thinking" });
 
     const entryId = crypto.randomUUID();
+    const previousQuestion = get().qaHistory[get().qaHistory.length - 1]?.question ?? "";
+    const isFollowUp = questionOverlapsWith(question, previousQuestion);
+
     set((s) => ({
       qaHistory: [
         ...s.qaHistory,
@@ -183,6 +214,7 @@ export const usePetStore = create<PetStore>((set, get) => ({
           llmConfidence: 0,
           pinned: false,
           timestamp: Date.now(),
+          isFollowUp,
         },
       ],
       streamingEntryId: entryId,
@@ -190,6 +222,12 @@ export const usePetStore = create<PetStore>((set, get) => ({
 
     try {
       const { invoke } = await import("@tauri-apps/api/core");
+
+      const recentHistory = get()
+        .qaHistory.slice(-2)
+        .filter((q) => q.ragAnswer && !q.ragAnswer.startsWith("Error:"))
+        .map((q) => [q.question, q.ragAnswer] as [string, string]);
+
       const response = await invoke<{ answer: string; source_document: string | null }>(
         "ask_pet",
         {
@@ -197,6 +235,7 @@ export const usePetStore = create<PetStore>((set, get) => ({
           question,
           answerStyle: answerStyle || "Professional",
           meetingMode,
+          recentHistory,
         }
       );
 
@@ -238,6 +277,21 @@ export const usePetStore = create<PetStore>((set, get) => ({
 
 if (typeof window !== "undefined") {
   import("@tauri-apps/api/event").then(({ listen }) => {
+    listen("audio_reconnecting", () => {
+      usePetStore.setState({ sessionStatus: "Reconnecting audio..." });
+    });
+
+    listen("audio_reconnected", () => {
+      usePetStore.setState((s) =>
+        s.listening ? { sessionStatus: "Listening..." } : s
+      );
+      usePetStore.getState().showToast("Audio device changed. Reconnected automatically.");
+    });
+
+    listen("audio_disconnected", () => {
+      usePetStore.setState({ sessionStatus: "Audio disconnected", listening: false });
+    });
+
     listen<string>("question_detected", (event) => {
       usePetStore.setState((s) => ({
         sessionStatus: "Question detected",

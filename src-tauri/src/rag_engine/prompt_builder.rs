@@ -3,6 +3,7 @@ pub struct PromptContext {
     pub context: String,
     pub answer_style: String,
     pub meeting_mode: String,
+    pub recent_history: Vec<(String, String)>, // (question, answer) pairs, most recent last
 }
 
 fn answer_style_instruction(style: &str) -> &'static str {
@@ -56,11 +57,28 @@ pub fn build_prompt(ctx: &PromptContext) -> String {
         Never contradict the context with outside knowledge.\n\n\
         FORMAT: Start with a 3-4 sentence summary. Then a blank line, then the key supporting details as short bullet points, each starting with \"- \". One idea per bullet. Do not use asterisks, headers, or any other markdown, plain text and \"- \" bullets only.\n\n\
         {}\n{}\n\n\
+        {}\
         Context:\n{}\n\n\
         Question:\n{}",
         answer_style_instruction(&ctx.answer_style),
         meeting_mode_instruction(&ctx.meeting_mode),
+        format_recent_history(&ctx.recent_history),
         ctx.context,
         ctx.question,
     )
+}
+
+fn format_recent_history(history: &[(String, String)]) -> String {
+    if history.is_empty() {
+        return String::new();
+    }
+
+    let mut out = String::from(
+        "Recent conversation (only reference this if genuinely relevant to the new question, ignore it otherwise):\n",
+    );
+    for (q, a) in history {
+        out.push_str(&format!("Q: {}\nA: {}\n", q, a));
+    }
+    out.push('\n');
+    out
 }
