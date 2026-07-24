@@ -17,6 +17,35 @@ function splitFallbackAnswer(answer: string): { prefix: string | null; body: str
   return { prefix: null, body: answer };
 }
 
+function renderFormattedAnswer(question: string, text: string) {
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  const summaryLines: string[] = [];
+  const bulletLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("-") || line.startsWith("•")) {
+      bulletLines.push(line.replace(/^[-•]\s*/, ""));
+    } else {
+      summaryLines.push(line);
+    }
+  }
+
+  return (
+    <>
+      {summaryLines.length > 0 && (
+        <p className="mb-2">{highlightKeywords(question, summaryLines.join(" "))}</p>
+      )}
+      {bulletLines.length > 0 && (
+        <ul className="list-disc pl-5 space-y-1">
+          {bulletLines.map((line, i) => (
+            <li key={i}>{highlightKeywords(question, line)}</li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 function highlightKeywords(question: string, answer: string) {
   const stopwords = new Set(["the", "a", "an", "is", "are", "what", "how", "why", "does", "do", "of", "to", "in", "on", "for", "and", "or"]);
   const keywords = Array.from(
@@ -99,7 +128,7 @@ function QAEntryCard({
             </div>
           )}
           <div className="mt-3 pt-3 border-t border-border/60">
-            <p
+            <div
               className={`text-[15px] leading-snug break-words ${
                 isLatest ? "text-blue-700" : "text-neutral-900"
               }`}
@@ -111,11 +140,11 @@ function QAEntryCard({
                     {prefix && (
                       <span className="block italic text-gray-400 mb-2">{prefix}</span>
                     )}
-                    {highlightKeywords(qa.question, body)}
+                    {renderFormattedAnswer(qa.question, body)}
                   </>
                 );
               })()}
-            </p>
+            </div>
           </div>
 
           {qa.llmAnswer && (
@@ -123,9 +152,9 @@ function QAEntryCard({
               <span className="text-[12px] font-bold text-muted-foreground uppercase tracking-wide">
                 LLM Answer
               </span>
-              <p className="text-[15px] text-neutral-900 leading-snug break-words mt-1">
-                {highlightKeywords(qa.question, qa.llmAnswer)}
-              </p>
+              <div className="text-[15px] text-neutral-900 leading-snug break-words mt-1">
+                {renderFormattedAnswer(qa.question, qa.llmAnswer)}
+              </div>
             </div>
           )}
 
@@ -156,6 +185,10 @@ export default function PetWidget() {
     askQuestion,
     selectedProjectId,
     setSelectedProjectId,
+    listening,
+    sessionStatus,
+    questionsDetected,
+    toggleListening,
   } = usePetStore();
 
   const [manualQuestion, setManualQuestion] = useState("");
@@ -177,83 +210,79 @@ export default function PetWidget() {
 
   const sizeMap = { small: 48, medium: 64, large: 88 };
   const dotSize = sizeMap[size];
-
-  const dockCoords = {
-    "top-left": { x: 24, y: 24 },
-    "top-right": { x: window.innerWidth - dotSize - 24, y: 24 },
-    "bottom-left": { x: 24, y: window.innerHeight - dotSize - 24 },
-    "bottom-right": {
-      x: window.innerWidth - dotSize - 24,
-      y: window.innerHeight - dotSize - 24,
-    },
-  };
-
-  const [position, setPosition] = useState(dockCoords[dockPosition]);
-
-  useEffect(() => {
-    if (!expanded) {
-      setPosition(dockCoords[dockPosition]);
-    }
-  }, [dockPosition]);
-
-  const [dragging, setDragging] = useState(false);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [moved, setMoved] = useState(false);
   const [hovering, setHovering] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setDragging(true);
-    setMoved(false);
-    setOffset({ x: e.clientX - position.x, y: e.clientY - position.y });
-  };
-
-  const handleMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (dragging) {
-        setMoved(true);
-        setPosition({ x: e.clientX - offset.x, y: e.clientY - offset.y });
-      }
-    },
-    [dragging, offset]
-  );
-
-  const handleMouseUp = useCallback(() => setDragging(false), []);
-
-  useEffect(() => {
-    if (dragging) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-    }
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [dragging, handleMouseMove, handleMouseUp]);
-
   const orderedHistory = [...qaHistory].reverse();
 
-  const handleClick = () => {
-    if (!moved) setExpanded(!expanded);
-  };
+  // The OS window itself must match what's actually visible, otherwise an
+  // oversized invisible window sits on screen blocking clicks and blocking
+  // drag range. Resize + reposition the real window whenever expand state
+  // changes, anchoring the bottom-right corner and clamping to the monitor
+  // so expanding never pushes part of the panel off-screen.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { getCurrentWindow, currentMonitor } = await import("@tauri-apps/api/window");
+      const { LogicalSize, LogicalPosition } = await import("@tauri-apps/api/dpi");
+      const win = getCurrentWindow();
+      const monitor = await currentMonitor();
+      if (!monitor || cancelled) return;
+
+      const scale = monitor.scaleFactor;
+      const monitorX = monitor.position.x / scale;
+      const monitorY = monitor.position.y / scale;
+      const monitorW = monitor.size.width / scale;
+      const monitorH = monitor.size.height / scale;
+
+      const targetW = expanded ? 380 : dotSize + 16;
+      const targetH = expanded ? 520 : dotSize + 16;
+
+      const currentPos = await win.outerPosition();
+      const currentSize = await win.outerSize();
+      const curX = currentPos.x / scale;
+      const curY = currentPos.y / scale;
+      const curW = currentSize.width / scale;
+      const curH = currentSize.height / scale;
+
+      // Keep the bottom-right corner fixed as the anchor point while resizing
+      const anchorRight = curX + curW;
+      const anchorBottom = curY + curH;
+
+      let newX = anchorRight - targetW;
+      let newY = anchorBottom - targetH;
+
+      newX = Math.min(newX, monitorX + monitorW - targetW);
+      newX = Math.max(newX, monitorX);
+      newY = Math.min(newY, monitorY + monitorH - targetH);
+      newY = Math.max(newY, monitorY);
+
+      await win.setSize(new LogicalSize(targetW, targetH));
+      await win.setPosition(new LogicalPosition(newX, newY));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [expanded, dotSize]);
 
   return (
     <motion.div
-      onMouseDown={handleMouseDown}
-      onClick={handleClick}
-      className={`fixed cursor-grab active:cursor-grabbing ${
+      data-tauri-drag-region={!expanded ? true : undefined}
+      onClick={() => setExpanded(!expanded)}
+      className={`absolute inset-0 ${!expanded ? "cursor-grab active:cursor-grabbing" : ""} ${
         expanded ? "rounded-3xl shadow-2xl bg-[#F5F7FA] overflow-hidden" : ""
       }`}
-      style={{ left: position.x, top: position.y }}
       initial={false}
       animate={{
-        width: expanded ? "60vw" : dotSize,
-        height: expanded ? "70vh" : dotSize,
         opacity: !expanded && state === "idle" ? opacityIdle : 1,
       }}
       transition={{ type: "spring", stiffness: 260, damping: 24 }}
     >
-      {!expanded && <PetAvatar state={state} status={status} size={dotSize} />}
+      {!expanded && (
+        <div style={{ pointerEvents: "none", padding: 8 }}>
+          <PetAvatar state={state} status={status} size={dotSize} />
+        </div>
+      )}
 
       <AnimatePresence>
         {expanded && (
@@ -264,12 +293,14 @@ export default function PetWidget() {
             transition={{ duration: 0.2 }}
             className="flex flex-col h-full"
           >
-            <div className="flex items-center gap-3 px-5 pt-5 pb-3 shrink-0 border-b border-border">
-              <PetAvatar state={state} status={status} size={40} />
-              <div>
-                <div className="font-bold text-[16px] text-foreground">Nova</div>
-                <div className="text-[13px] text-muted-foreground capitalize">
-                  {state}
+            <div data-tauri-drag-region className="flex items-center gap-3 px-5 pt-5 pb-3 shrink-0 border-b border-border cursor-grab active:cursor-grabbing">
+              <div style={{ pointerEvents: "none" }} className="flex items-center gap-3">
+                <PetAvatar state={state} status={status} size={40} />
+                <div>
+                  <div className="font-bold text-[16px] text-foreground">Nova</div>
+                  <div className="text-[13px] text-muted-foreground capitalize">
+                    {state}
+                  </div>
                 </div>
               </div>
             </div>
@@ -306,6 +337,32 @@ export default function PetWidget() {
                   <option value="__all__">🌐 All Projects</option>
                 </select>
               </div>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleListening();
+                }}
+                className={`w-full rounded-xl px-4 py-3 mb-3 text-left transition-colors ${
+                  listening
+                    ? "bg-red-50 border border-red-200"
+                    : "bg-green-50 border border-green-200"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-[15px] font-semibold text-foreground">
+                    {listening ? "🔴 Stop Meeting" : "🟢 Start Meeting"}
+                  </span>
+                  {listening && questionsDetected > 0 && (
+                    <span className="text-[12px] text-muted-foreground">
+                      {questionsDetected} question{questionsDetected === 1 ? "" : "s"} detected
+                    </span>
+                  )}
+                </div>
+                <div className="text-[13px] text-muted-foreground mt-0.5">
+                  {listening ? sessionStatus : "Ready"}
+                </div>
+              </button>
 
               <div
                 onClick={(e) => e.stopPropagation()}

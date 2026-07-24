@@ -5,6 +5,12 @@ import { projectService } from "@/lib/projectService";
 
 export type PetStatus = "ready" | "standby" | "setup-required";
 export type PetState = "idle" | "thinking" | "answering";
+export type SessionStatus =
+  | "Stopped"
+  | "Connecting..."
+  | "Listening..."
+  | "Question detected"
+  | "Error";
 
 export interface QAEntry {
   id: string;
@@ -33,6 +39,11 @@ interface PetStore {
   alwaysOnTop: boolean;
   hydrated: boolean;
   selectedProjectId: string | null; // null = use active project, "__all__" = search everything
+  streamingEntryId: string | null;
+  listening: boolean;
+  sessionStatus: SessionStatus;
+  questionsDetected: number;
+  toggleListening: () => Promise<void>;
   setStatus: (status: PetStatus) => void;
   setState: (state: PetState) => void;
   setExpanded: (expanded: boolean) => void;
@@ -59,6 +70,10 @@ export const usePetStore = create<PetStore>((set, get) => ({
   opacityIdle: 1,
   alwaysOnTop: true,
   hydrated: false,
+  streamingEntryId: null,
+  listening: false,
+  sessionStatus: "Stopped" as SessionStatus,
+  questionsDetected: 0,
 
   setStatus: (status) => set({ status }),
   setState: (state) => set({ state }),
@@ -101,6 +116,36 @@ export const usePetStore = create<PetStore>((set, get) => ({
 
   setSelectedProjectId: (id) => set({ selectedProjectId: id }),
 
+  toggleListening: async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const { listening } = get();
+
+    if (listening) {
+      await invoke("stop_meeting_session");
+      set({ listening: false, sessionStatus: "Stopped" });
+      return;
+    }
+
+    set({ listening: true, sessionStatus: "Connecting..." });
+    try {
+      const { selectedProjectId } = get();
+      let projectId: string | undefined;
+
+      if (selectedProjectId && selectedProjectId !== "__all__") {
+        projectId = selectedProjectId;
+      } else if (!selectedProjectId) {
+        const projects = await projectService.list();
+        projectId = projects.find((p: any) => p.is_active)?.id;
+      }
+
+      await invoke("start_meeting_session", { projectId });
+      set({ sessionStatus: "Listening..." });
+    } catch (err) {
+      console.error("Failed to start session:", err);
+      set({ listening: false, sessionStatus: "Error" });
+    }
+  },
+
   askQuestion: async (question: string) => {
     const projects = await projectService.list();
     const activeProject = projects.find((p) => p.is_active);
@@ -125,6 +170,24 @@ export const usePetStore = create<PetStore>((set, get) => ({
 
     set({ state: "thinking" });
 
+    const entryId = crypto.randomUUID();
+    set((s) => ({
+      qaHistory: [
+        ...s.qaHistory,
+        {
+          id: entryId,
+          question,
+          ragAnswer: "",
+          ragConfidence: 100,
+          llmAnswer: "",
+          llmConfidence: 0,
+          pinned: false,
+          timestamp: Date.now(),
+        },
+      ],
+      streamingEntryId: entryId,
+    }));
+
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const response = await invoke<{ answer: string; source_document: string | null }>(
@@ -137,24 +200,21 @@ export const usePetStore = create<PetStore>((set, get) => ({
         }
       );
 
-      get().addQAEntry({
-        question,
-        ragAnswer: response.answer,
-        ragConfidence: 100,
-        llmAnswer: "",
-        llmConfidence: 0,
-        sourceDocument: response.source_document ?? undefined,
-      });
+      set((s) => ({
+        qaHistory: s.qaHistory.map((q) =>
+          q.id === entryId
+            ? { ...q, ragAnswer: response.answer, sourceDocument: response.source_document ?? undefined }
+            : q
+        ),
+      }));
     } catch (err) {
-      get().addQAEntry({
-        question,
-        ragAnswer: `Error: ${err}`,
-        ragConfidence: 0,
-        llmAnswer: "",
-        llmConfidence: 0,
-      });
+      set((s) => ({
+        qaHistory: s.qaHistory.map((q) =>
+          q.id === entryId ? { ...q, ragAnswer: `Error: ${err}` } : q
+        ),
+      }));
     } finally {
-      set({ state: "answering" });
+      set({ state: "answering", streamingEntryId: null });
       setTimeout(() => set({ state: "idle" }), 2000);
     }
   },
@@ -175,6 +235,41 @@ export const usePetStore = create<PetStore>((set, get) => ({
     });
   },
 }));
+
+if (typeof window !== "undefined") {
+  import("@tauri-apps/api/event").then(({ listen }) => {
+    listen<string>("question_detected", (event) => {
+      usePetStore.setState((s) => ({
+        sessionStatus: "Question detected",
+        questionsDetected: s.questionsDetected + 1,
+      }));
+
+      usePetStore.getState().askQuestion(event.payload);
+
+      setTimeout(() => {
+        usePetStore.setState((s) =>
+          s.listening ? { sessionStatus: "Listening..." } : s
+        );
+      }, 2000);
+    });
+
+    listen<string>("answer_chunk", (event) => {
+      const { streamingEntryId } = usePetStore.getState();
+      if (!streamingEntryId) return;
+      usePetStore.setState((s) => ({
+        qaHistory: s.qaHistory.map((q) =>
+          q.id === streamingEntryId
+            ? { ...q, ragAnswer: q.ragAnswer + event.payload }
+            : q
+        ),
+      }));
+    });
+
+    listen("answer_done", () => {
+      usePetStore.setState({ streamingEntryId: null });
+    });
+  });
+}
 
 if (import.meta.env.DEV) {
   (window as any).petStore = usePetStore;
