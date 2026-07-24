@@ -51,14 +51,12 @@ pub fn build_general_prompt(question: &str, answer_style: &str, meeting_mode: &s
 pub fn build_prompt(ctx: &PromptContext) -> String {
     format!(
         "You are CopilotMeet, a real-time assistant helping the user during a live meeting.\n\
-        STRICT RULE: Only use facts explicitly stated in the context below. Do not use any outside knowledge, even if you know the answer.\n\
-        If the context does not explicitly answer the question, you MUST respond with exactly this and nothing else:\n\
-        \"{}\"\n\
-        Do not add explanations, apologies, or partial answers. Do not invent information that isn't in the context.\n\n\
+        Use the context below as your primary source of truth. If it answers the question, base your answer on it directly.\n\
+        If the context is incomplete or missing relevant details, use your own knowledge to fill the gap, and briefly note which part of your answer comes from general knowledge rather than the documents.\n\
+        Never contradict the context with outside knowledge.\n\n\
         {}\n{}\n\n\
         Context:\n{}\n\n\
         Question:\n{}",
-        NOT_FOUND_PHRASE,
         answer_style_instruction(&ctx.answer_style),
         meeting_mode_instruction(&ctx.meeting_mode),
         ctx.context,

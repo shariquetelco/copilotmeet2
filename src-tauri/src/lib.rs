@@ -4,6 +4,7 @@ mod commands;
 mod rag_engine;
 mod llm_engine;
 mod question_engine;
+mod audio_engine;
 
 use rusqlite::Connection;
 use std::sync::Mutex;
@@ -22,6 +23,12 @@ pub struct AppState {
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn test_audio_loopback() -> Result<String, String> {
+    let bytes = audio_engine::loopback::test_capture(5)?;
+    Ok(format!("Captured {} bytes in 5 seconds", bytes))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -46,6 +53,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             greet,
+            test_audio_loopback,
             create_project,
             list_projects,
             update_project,

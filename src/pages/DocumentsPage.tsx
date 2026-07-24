@@ -187,7 +187,7 @@ function DocumentRow({ doc, onDelete }: { doc: Document; onDelete: () => void })
 }
 
 export default function DocumentsPage({ projectId }: { projectId: string }) {
-  const { documents, storageUsed, error, fetchDocuments, uploadFiles, deleteDocument } =
+  const { documents, storageUsed, error, loading, fetchDocuments, uploadFiles, deleteDocument } =
     useDocumentStore();
 
   useEffect(() => {
@@ -213,10 +213,20 @@ export default function DocumentsPage({ projectId }: { projectId: string }) {
         </p>
         <button
           onClick={() => uploadFiles(projectId)}
-          className="px-4 py-3 rounded-xl text-[15px] font-semibold bg-primary text-white hover:opacity-90 flex items-center gap-2"
+          disabled={loading}
+          className="px-4 py-3 rounded-xl text-[15px] font-semibold bg-primary text-white hover:opacity-90 flex items-center gap-2 disabled:opacity-60"
         >
-          <Upload size={18} />
-          Upload
+          {loading ? (
+            <>
+              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              Processing…
+            </>
+          ) : (
+            <>
+              <Upload size={18} />
+              Upload
+            </>
+          )}
         </button>
       </div>
 

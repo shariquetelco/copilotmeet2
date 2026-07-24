@@ -191,32 +191,39 @@ pub async fn ask_pet(
         meeting_mode: meeting_mode.clone(),
     });
 
-    let api_key = {
+    let (provider, api_key) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        ApiKeyRepository::get(&conn, "groq")
+
+        let priority_json = crate::repositories::settings::SettingsRepository::get(
+            &conn,
+            "ai.llm_provider_priority",
+        )
+        .map_err(|e| e.to_string())?;
+
+        let provider_str = priority_json
+            .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+            .and_then(|list| list.into_iter().next())
+            .unwrap_or_else(|| "groq".to_string());
+
+        let provider = llm_engine::LlmProvider::from_str(&provider_str)
+            .ok_or_else(|| format!("Unknown AI provider selected: {}", provider_str))?;
+
+        let key = ApiKeyRepository::get(&conn, provider.as_str())
             .map_err(|e| e.to_string())?
-            .ok_or("No Groq API key configured. Add one in AI Settings.")?
+            .ok_or_else(|| {
+                format!(
+                    "{} is selected, but no {} API key is configured. Add one in AI Settings.",
+                    provider.as_str(),
+                    provider.as_str()
+                )
+            })?;
+
+        (provider, key)
     };
 
     let llm_start = std::time::Instant::now();
-    let answer = llm_engine::ask_groq(&api_key, &prompt).await?;
-    println!("Groq: {}ms", llm_start.elapsed().as_millis());
-
-    if answer.trim() == rag_engine::prompt_builder::NOT_FOUND_PHRASE {
-        let fallback_start = std::time::Instant::now();
-        let fallback_prompt =
-            rag_engine::prompt_builder::build_general_prompt(&question, &answer_style, &meeting_mode);
-        let fallback_answer = llm_engine::ask_groq(&api_key, &fallback_prompt).await?;
-        println!("Groq (fallback): {}ms", fallback_start.elapsed().as_millis());
-
-        return Ok(AskPetResponse {
-            answer: format!(
-                "My documents don't contain this information. Based on general knowledge:\n\n{}",
-                fallback_answer
-            ),
-            source_document: None,
-        });
-    }
+    let answer = llm_engine::ask(provider, &api_key, &prompt).await?;
+    println!("{}: {}ms", provider.as_str(), llm_start.elapsed().as_millis());
 
     Ok(AskPetResponse {
         answer,
