@@ -50,6 +50,13 @@ fn test_verify_token(token: String) -> Result<license::verify::LicenseClaims, St
 }
 
 #[tauri::command]
+async fn test_activate(license_key: String) -> Result<license::verify::LicenseClaims, String> {
+    let device_id = license::fingerprint::get_device_fingerprint()?;
+    let token = license::client::activate(&license_key, &device_id).await?;
+    license::verify::verify_token(&token)
+}
+
+#[tauri::command]
 async fn start_meeting_session(app: tauri::AppHandle, state: State<'_, AppState>, project_id: Option<String>) -> Result<(), String> {
     {
         let mut session = state.audio_session.lock().map_err(|e| e.to_string())?;
@@ -285,6 +292,7 @@ pub fn run() {
             test_audio_loopback,
             test_fingerprint,
             test_verify_token,
+            test_activate,
             test_deepgram_transcription,
             start_meeting_session,
             stop_meeting_session,
