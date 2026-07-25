@@ -44,7 +44,8 @@ fn f32_bytes_to_i16_bytes(data: &[u8]) -> Vec<u8> {
 
 pub async fn start_transcription(
     capture_receiver: std::sync::mpsc::Receiver<AudioFrame>,
-    api_key: String,
+    token: String,
+    use_bearer: bool,
     keyterms: Vec<String>,
 ) -> Result<(UnboundedReceiver<TranscriptEvent>, Vec<tokio::task::JoinHandle<()>>), String> {
     let mut tasks = Vec::new();
@@ -78,10 +79,11 @@ pub async fn start_transcription(
     }
     println!("Deepgram keyword boost list: {:?}", keyterms);
 
+    let scheme = if use_bearer { "Bearer" } else { "Token" };
     let mut request = url.into_client_request().map_err(|e| e.to_string())?;
     request.headers_mut().insert(
         AUTHORIZATION,
-        format!("Token {}", api_key)
+        format!("{} {}", scheme, token)
             .parse()
             .map_err(|e: tokio_tungstenite::tungstenite::http::header::InvalidHeaderValue| e.to_string())?,
     );

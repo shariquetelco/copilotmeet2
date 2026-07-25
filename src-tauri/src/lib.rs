@@ -224,6 +224,39 @@ async fn start_trial(state: State<'_, AppState>, email: String) -> Result<licens
     }
 }
 
+enum AuthMode {
+    Byok(String),
+    Trial(String), // trial_session_id — fetches a fresh broker token every iteration
+}
+
+async fn determine_auth_mode(state: &State<'_, AppState>) -> Result<AuthMode, String> {
+    use license::status::read_token;
+    use license::verify::{check_token, TokenCheckResult};
+
+    let token = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        read_token(&conn)
+    };
+
+    if let Some(t) = token {
+        if let TokenCheckResult::Valid(claims) = check_token(&t) {
+            if claims.token_type == "trial" {
+                let trial_id = claims
+                    .trial_session_id
+                    .ok_or("Trial token missing trialSessionId")?;
+                return Ok(AuthMode::Trial(trial_id));
+            }
+        }
+    }
+
+    // Licensed (or no valid trial claim) — fall back to BYOK, same as before.
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let api_key = crate::repositories::api_keys::ApiKeyRepository::get(&conn, "deepgram")
+        .map_err(|e| e.to_string())?
+        .ok_or("No Deepgram API key configured. Add one in AI Settings.")?;
+    Ok(AuthMode::Byok(api_key))
+}
+
 #[tauri::command]
 async fn start_meeting_session(app: tauri::AppHandle, state: State<'_, AppState>, project_id: Option<String>) -> Result<(), String> {
     {
@@ -237,12 +270,7 @@ async fn start_meeting_session(app: tauri::AppHandle, state: State<'_, AppState>
         }
     }
 
-    let api_key = {
-        let conn = state.db.lock().map_err(|e| e.to_string())?;
-        crate::repositories::api_keys::ApiKeyRepository::get(&conn, "deepgram")
-            .map_err(|e| e.to_string())?
-            .ok_or("No Deepgram API key configured. Add one in AI Settings.")?
-    };
+    let auth = determine_auth_mode(&state).await?;
 
     let keyterms = if let Some(pid) = &project_id {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
@@ -251,22 +279,34 @@ async fn start_meeting_session(app: tauri::AppHandle, state: State<'_, AppState>
         Vec::new()
     };
 
-    tauri::async_runtime::spawn(run_session_with_reconnect(app, api_key, keyterms));
+    tauri::async_runtime::spawn(run_session_with_reconnect(app, auth, keyterms));
 
     Ok(())
 }
 
-/// Runs one capture+transcription session. If the underlying audio device
-/// changes mid-meeting (headphones unplugged, etc.), the current session
-/// can't just keep going — Deepgram's audio format is locked in for the
-/// life of its connection — so this cleanly restarts capture and Deepgram
-/// against whatever the new default device is, up to a few attempts,
-/// before giving up and telling the UI it's genuinely disconnected.
-async fn run_session_with_reconnect(app: tauri::AppHandle, api_key: String, keyterms: Vec<String>) {
+/// Runs one capture+transcription session, reconnecting on: a device
+/// change (headphones unplugged, etc.), or — for trial users only — a
+/// self-enforced ~18-minute renewal, since Deepgram's temp tokens only
+/// need to be valid at connection time, so the cap has to be enforced by
+/// us choosing to reconnect, not by the token itself expiring mid-call.
+async fn run_session_with_reconnect(app: tauri::AppHandle, auth: AuthMode, keyterms: Vec<String>) {
     const MAX_RECONNECT_ATTEMPTS: u32 = 3;
+    const TRIAL_RENEWAL_SECS: u64 = 18 * 60;
     let mut attempt = 0;
 
     loop {
+        let (token, use_bearer) = match &auth {
+            AuthMode::Byok(key) => (key.clone(), false),
+            AuthMode::Trial(trial_id) => match license::broker::request_deepgram_token(trial_id).await {
+                Ok(resp) => (resp.access_token, true),
+                Err(e) => {
+                    println!("Trial broker token request failed: {}", e);
+                    let _ = app.emit("trial_ended", e);
+                    return;
+                }
+            },
+        };
+
         let capture = match audio_engine::start_capture() {
             Ok(c) => c,
             Err(e) => {
@@ -281,7 +321,8 @@ async fn run_session_with_reconnect(app: tauri::AppHandle, api_key: String, keyt
 
         let (mut rx, tasks) = match stt_engine::deepgram::start_transcription(
             audio_receiver,
-            api_key.clone(),
+            token,
+            use_bearer,
             keyterms.clone(),
         )
         .await
@@ -315,6 +356,8 @@ async fn run_session_with_reconnect(app: tauri::AppHandle, api_key: String, keyt
             }
         });
 
+        let is_trial = matches!(auth, AuthMode::Trial(_));
+
         loop {
             tokio::select! {
                 event = rx.recv() => {
@@ -339,6 +382,10 @@ async fn run_session_with_reconnect(app: tauri::AppHandle, api_key: String, keyt
                 }
                 _ = &mut dc_rx => {
                     println!("Audio device changed, reconnecting...");
+                    break;
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(TRIAL_RENEWAL_SECS)), if is_trial => {
+                    println!("Trial renewal interval reached, refreshing broker token...");
                     break;
                 }
             }
@@ -393,7 +440,7 @@ async fn test_deepgram_transcription(state: State<'_, AppState>, seconds: u64) -
     let capture = audio_engine::start_capture()?;
     let stop = capture.stopper();
 
-    let (mut rx, _tasks) = stt_engine::deepgram::start_transcription(capture.receiver, api_key, Vec::new()).await?;
+    let (mut rx, _tasks) = stt_engine::deepgram::start_transcription(capture.receiver, api_key, false, Vec::new()).await?;
 
     let mut finals = Vec::new();
     let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(seconds);
