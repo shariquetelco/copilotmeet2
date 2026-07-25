@@ -1,3 +1,4 @@
+pub mod broker;
 pub mod client;
 pub mod fingerprint;
 pub mod keys;

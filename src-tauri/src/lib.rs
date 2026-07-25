@@ -138,6 +138,11 @@ struct LicenseDetails {
 }
 
 #[tauri::command]
+async fn test_broker_token(trial_session_id: String) -> Result<license::broker::DeepgramTokenResponse, String> {
+    license::broker::request_deepgram_token(&trial_session_id).await
+}
+
+#[tauri::command]
 fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, String> {
     use license::status::{read_last_verified, read_token};
     use license::verify::{check_token, TokenCheckResult};
@@ -457,6 +462,7 @@ pub fn run() {
             activate_license,
             start_trial,
             get_license_details,
+            test_broker_token,
             test_deepgram_transcription,
             start_meeting_session,
             stop_meeting_session,
