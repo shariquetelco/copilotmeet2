@@ -206,44 +206,64 @@ pub async fn ask_pet(
         recent_history: recent_history.unwrap_or_default(),
     });
 
-    let (provider, api_key) = {
+    let trial_session_id: Option<String> = {
+        use crate::license::status::read_token;
+        use crate::license::verify::{check_token, TokenCheckResult};
+
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-
-        let priority_json = crate::repositories::settings::SettingsRepository::get(
-            &conn,
-            "ai.llm_provider_priority",
-        )
-        .map_err(|e| e.to_string())?;
-
-        let provider_str = priority_json
-            .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
-            .and_then(|list| list.into_iter().next())
-            .unwrap_or_else(|| "groq".to_string());
-
-        let provider = llm_engine::LlmProvider::from_str(&provider_str)
-            .ok_or_else(|| format!("Unknown AI provider selected: {}", provider_str))?;
-
-        let key = ApiKeyRepository::get(&conn, provider.as_str())
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| {
-                format!(
-                    "{} is selected, but no {} API key is configured. Add one in AI Settings.",
-                    provider.as_str(),
-                    provider.as_str()
-                )
-            })?;
-
-        (provider, key)
+        read_token(&conn).and_then(|t| match check_token(&t) {
+            TokenCheckResult::Valid(claims) if claims.token_type == "trial" => claims.trial_session_id,
+            _ => None,
+        })
     };
 
     let llm_start = std::time::Instant::now();
     let app_for_stream = app.clone();
-    let answer = llm_engine::ask_stream(provider, &api_key, &prompt, move |token| {
-        let _ = app_for_stream.emit("answer_chunk", token);
-    })
-    .await?;
+
+    let answer = if let Some(trial_id) = trial_session_id {
+        crate::license::broker::ask_groq_stream(&trial_id, &prompt, move |token| {
+            let _ = app_for_stream.emit("answer_chunk", token);
+        })
+        .await?
+    } else {
+        let (provider, api_key) = {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+            let priority_json = crate::repositories::settings::SettingsRepository::get(
+                &conn,
+                "ai.llm_provider_priority",
+            )
+            .map_err(|e| e.to_string())?;
+
+            let provider_str = priority_json
+                .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+                .and_then(|list| list.into_iter().next())
+                .unwrap_or_else(|| "groq".to_string());
+
+            let provider = llm_engine::LlmProvider::from_str(&provider_str)
+                .ok_or_else(|| format!("Unknown AI provider selected: {}", provider_str))?;
+
+            let key = ApiKeyRepository::get(&conn, provider.as_str())
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| {
+                    format!(
+                        "{} is selected, but no {} API key is configured. Add one in AI Settings.",
+                        provider.as_str(),
+                        provider.as_str()
+                    )
+                })?;
+
+            (provider, key)
+        };
+
+        llm_engine::ask_stream(provider, &api_key, &prompt, move |token| {
+            let _ = app_for_stream.emit("answer_chunk", token);
+        })
+        .await?
+    };
+
     let _ = app.emit("answer_done", ());
-    println!("{}: {}ms", provider.as_str(), llm_start.elapsed().as_millis());
+    println!("LLM: {}ms", llm_start.elapsed().as_millis());
 
     Ok(AskPetResponse {
         answer,
