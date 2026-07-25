@@ -18,6 +18,9 @@ pub struct LicenseClaims {
     pub token_version: Option<u32>,
     #[serde(rename = "type")]
     pub token_type: String, // "license" or "trial"
+    pub email: Option<String>,
+    #[serde(rename = "activationCount")]
+    pub activation_count: Option<u32>,
     pub exp: usize,
     pub iat: usize,
 }

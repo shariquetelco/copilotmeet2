@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
 
 const themes = ["light", "dark", "system"];
@@ -39,6 +40,113 @@ function SectionCard({ title, children }: { title: string; children: React.React
       <h2 className="text-[22px] font-bold text-foreground mb-2">{title}</h2>
       <div>{children}</div>
     </div>
+  );
+}
+
+type LicenseDetails = {
+  mode: string;
+  plan: string | null;
+  email: string | null;
+  max_devices: number | null;
+  activation_count: number | null;
+  masked_key: string | null;
+  last_verified_at: number | null;
+  expires_at: number | null;
+};
+
+function timeAgo(unixSeconds: number | null): string {
+  if (!unixSeconds) return "never";
+  const days = Math.floor((Date.now() / 1000 - unixSeconds) / 86400);
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+function daysRemaining(expUnixSeconds: number | null): number {
+  if (!expUnixSeconds) return 0;
+  return Math.max(0, Math.ceil((expUnixSeconds - Date.now() / 1000) / 86400));
+}
+
+function LicenseSection() {
+  const [details, setDetails] = useState<LicenseDetails | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const d = await invoke<LicenseDetails>("get_license_details");
+      setDetails(d);
+    })();
+  }, []);
+
+  if (!details) {
+    return (
+      <SectionCard title="License">
+        <p className="text-[14px] text-muted-foreground">Loading...</p>
+      </SectionCard>
+    );
+  }
+
+  if (details.mode === "ActivationRequired") {
+    return (
+      <SectionCard title="License">
+        <p className="text-[14px] text-muted-foreground">No license activated.</p>
+      </SectionCard>
+    );
+  }
+
+  const isTrial = details.mode === "Trial";
+
+  return (
+    <SectionCard title="License">
+      <SettingRow label="Status">
+        <span
+          className={`text-[14px] font-semibold px-3 py-1 rounded-full ${
+            isTrial ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"
+          }`}
+        >
+          {isTrial ? "🟡 Trial" : "✅ Active"}
+        </span>
+      </SettingRow>
+
+      <SettingRow label="Plan">
+        <span className="text-[14px]">{details.plan ?? "—"}</span>
+      </SettingRow>
+
+      <SettingRow label="Email">
+        <span className="text-[14px]">{details.email ?? "—"}</span>
+      </SettingRow>
+
+      {isTrial ? (
+        <>
+          <SettingRow label="Days Remaining">
+            <span className="text-[14px]">{daysRemaining(details.expires_at)} of 7</span>
+          </SettingRow>
+          <SettingRow label="AI Usage">
+            <span className="text-[14px] text-muted-foreground">
+              Usage tracking available once the trial broker ships
+            </span>
+          </SettingRow>
+          <button className="mt-2 px-5 py-3 bg-primary text-white rounded-xl text-[16px] font-semibold">
+            Upgrade to Pro
+          </button>
+        </>
+      ) : (
+        <>
+          <SettingRow label="License Key">
+            <span className="text-[14px] font-mono">{details.masked_key ?? "—"}</span>
+          </SettingRow>
+          <SettingRow label="Device">
+            <span className="text-[14px]">
+              {details.activation_count ?? "?"} of {details.max_devices ?? "?"} activated
+            </span>
+          </SettingRow>
+        </>
+      )}
+
+      <SettingRow label="Last Verified">
+        <span className="text-[14px] text-muted-foreground">{timeAgo(details.last_verified_at)}</span>
+      </SettingRow>
+    </SectionCard>
   );
 }
 
@@ -97,32 +205,7 @@ export default function GeneralSettings() {
         </SettingRow>
       </SectionCard>
 
-      <SectionCard title="License">
-        <SettingRow label="License Key">
-          <input
-            placeholder="Enter license key"
-            disabled
-            className="border border-input rounded-lg px-3 py-2 text-[16px] w-48 bg-muted text-muted-foreground"
-          />
-        </SettingRow>
-
-        <SettingRow label="Status">
-          <span className="text-[14px] font-semibold px-3 py-1 rounded-full bg-orange-100 text-orange-700">
-            Trial (not yet implemented)
-          </span>
-        </SettingRow>
-
-        <SettingRow label="Device ID">
-          <span className="text-[14px] text-muted-foreground font-mono">not yet generated</span>
-        </SettingRow>
-
-        <button
-          disabled
-          className="mt-4 px-5 py-3 bg-muted text-muted-foreground rounded-xl text-[16px] font-semibold cursor-not-allowed"
-        >
-          Activate License (coming soon)
-        </button>
-      </SectionCard>
+      <LicenseSection />
     </div>
   );
 }

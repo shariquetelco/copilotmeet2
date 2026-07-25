@@ -110,11 +110,96 @@ async fn activate_license(state: State<'_, AppState>, license_key: String) -> Re
 
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     store_token(&conn, &token)?;
+    // Stored purely for masked display in Settings — never sent anywhere,
+    // the JWT itself deliberately never carries the raw key.
+    let _ = crate::repositories::settings::SettingsRepository::set(
+        &conn,
+        "license.key",
+        &license_key,
+        &now_secs().to_string(),
+    );
 
     match check_token(&token) {
         TokenCheckResult::Valid(claims) => Ok(mode_from_claims(&claims)),
         _ => Err("Received an invalid token from the server".to_string()),
     }
+}
+
+#[derive(serde::Serialize)]
+struct LicenseDetails {
+    mode: String,
+    plan: Option<String>,
+    email: Option<String>,
+    max_devices: Option<u32>,
+    activation_count: Option<u32>,
+    masked_key: Option<String>,
+    last_verified_at: Option<i64>,
+    expires_at: Option<usize>,
+}
+
+#[tauri::command]
+fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, String> {
+    use license::status::{read_last_verified, read_token};
+    use license::verify::{check_token, TokenCheckResult};
+
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    let token = match read_token(&conn) {
+        Some(t) => t,
+        None => {
+            return Ok(LicenseDetails {
+                mode: "ActivationRequired".to_string(),
+                plan: None,
+                email: None,
+                max_devices: None,
+                activation_count: None,
+                masked_key: None,
+                last_verified_at: None,
+                expires_at: None,
+            })
+        }
+    };
+
+    let claims = match check_token(&token) {
+        TokenCheckResult::Valid(c) | TokenCheckResult::Expired(c) => c,
+        TokenCheckResult::Invalid => {
+            return Ok(LicenseDetails {
+                mode: "ActivationRequired".to_string(),
+                plan: None,
+                email: None,
+                max_devices: None,
+                activation_count: None,
+                masked_key: None,
+                last_verified_at: None,
+                expires_at: None,
+            })
+        }
+    };
+
+    let raw_key = crate::repositories::settings::SettingsRepository::get(&conn, "license.key")
+        .ok()
+        .flatten();
+
+    let masked_key = raw_key.map(|k| {
+        if k.len() > 8 {
+            format!("{}****{}", &k[..4], &k[k.len() - 4..])
+        } else {
+            k
+        }
+    });
+
+    let last_verified_at = read_last_verified(&conn);
+
+    Ok(LicenseDetails {
+        mode: if claims.token_type == "trial" { "Trial".to_string() } else { "Licensed".to_string() },
+        plan: claims.plan,
+        email: claims.email,
+        max_devices: claims.max_devices,
+        activation_count: claims.activation_count,
+        masked_key,
+        last_verified_at: Some(last_verified_at),
+        expires_at: Some(claims.exp),
+    })
 }
 
 #[tauri::command]
@@ -371,6 +456,7 @@ pub fn run() {
             get_license_status,
             activate_license,
             start_trial,
+            get_license_details,
             test_deepgram_transcription,
             start_meeting_session,
             stop_meeting_session,
