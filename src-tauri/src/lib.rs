@@ -40,20 +40,98 @@ fn test_audio_loopback() -> Result<String, String> {
 }
 
 #[tauri::command]
-fn test_fingerprint() -> Result<String, String> {
-    license::fingerprint::get_device_fingerprint()
+async fn get_license_status(state: State<'_, AppState>) -> Result<license::mode::AppMode, String> {
+    use license::status::*;
+    use license::verify::{check_token, TokenCheckResult};
+
+    let token = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        match read_token(&conn) {
+            Some(t) => t,
+            None => return Ok(license::mode::AppMode::ActivationRequired),
+        }
+    };
+
+    match check_token(&token) {
+        TokenCheckResult::Valid(claims) => Ok(mode_from_claims(&claims)),
+        TokenCheckResult::Invalid => Ok(license::mode::AppMode::ActivationRequired),
+        TokenCheckResult::Expired(claims) => {
+            if claims.token_type == "trial" {
+                return Ok(license::mode::AppMode::Locked {
+                    reason: "Your trial has ended. Please purchase a license.".to_string(),
+                });
+            }
+
+            let device_id = license::fingerprint::get_device_fingerprint()?;
+            let license_id = claims.license_id.clone().unwrap_or_default();
+            let token_version = claims.token_version.unwrap_or(1);
+
+            match license::client::check(&license_id, &device_id, token_version).await {
+                Ok(new_token) => {
+                    let conn = state.db.lock().map_err(|e| e.to_string())?;
+                    store_token(&conn, &new_token)?;
+                    match check_token(&new_token) {
+                        TokenCheckResult::Valid(new_claims) => Ok(mode_from_claims(&new_claims)),
+                        _ => Ok(license::mode::AppMode::ActivationRequired),
+                    }
+                }
+                Err(e) => {
+                    if e.contains("Network error") {
+                        let last_verified = {
+                            let conn = state.db.lock().map_err(|e| e.to_string())?;
+                            read_last_verified(&conn)
+                        };
+                        let days_since = (now_secs() - last_verified) / 86400;
+                        let days_remaining = GRACE_DAYS - days_since;
+
+                        if days_remaining > 0 {
+                            Ok(license::mode::AppMode::Grace { days_remaining })
+                        } else {
+                            Ok(license::mode::AppMode::Locked {
+                                reason: "Offline grace period expired. Please reconnect to verify your license.".to_string(),
+                            })
+                        }
+                    } else {
+                        Ok(license::mode::AppMode::Locked { reason: e })
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[tauri::command]
-fn test_verify_token(token: String) -> Result<license::verify::LicenseClaims, String> {
-    license::verify::verify_token(&token)
-}
+async fn activate_license(state: State<'_, AppState>, license_key: String) -> Result<license::mode::AppMode, String> {
+    use license::status::*;
+    use license::verify::{check_token, TokenCheckResult};
 
-#[tauri::command]
-async fn test_activate(license_key: String) -> Result<license::verify::LicenseClaims, String> {
     let device_id = license::fingerprint::get_device_fingerprint()?;
     let token = license::client::activate(&license_key, &device_id).await?;
-    license::verify::verify_token(&token)
+
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store_token(&conn, &token)?;
+
+    match check_token(&token) {
+        TokenCheckResult::Valid(claims) => Ok(mode_from_claims(&claims)),
+        _ => Err("Received an invalid token from the server".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn start_trial(state: State<'_, AppState>, email: String) -> Result<license::mode::AppMode, String> {
+    use license::status::*;
+    use license::verify::{check_token, TokenCheckResult};
+
+    let device_id = license::fingerprint::get_device_fingerprint()?;
+    let token = license::client::start_trial(&email, &device_id).await?;
+
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    store_token(&conn, &token)?;
+
+    match check_token(&token) {
+        TokenCheckResult::Valid(claims) => Ok(mode_from_claims(&claims)),
+        _ => Err("Received an invalid token from the server".to_string()),
+    }
 }
 
 #[tauri::command]
@@ -290,9 +368,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             test_audio_loopback,
-            test_fingerprint,
-            test_verify_token,
-            test_activate,
+            get_license_status,
+            activate_license,
+            start_trial,
             test_deepgram_transcription,
             start_meeting_session,
             stop_meeting_session,

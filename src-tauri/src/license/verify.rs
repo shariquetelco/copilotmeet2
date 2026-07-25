@@ -38,3 +38,37 @@ pub fn verify_token(token: &str) -> Result<LicenseClaims, String> {
 
     Ok(token_data.claims)
 }
+
+/// Same signature check, but ignores expiry — used only to read claims
+/// out of a token that's already expired, so we can calculate how long
+/// ago it was issued for the offline-grace window. Still cryptographically
+/// verified, still can't be forged, just doesn't reject on age.
+pub enum TokenCheckResult {
+    Valid(LicenseClaims),
+    Expired(LicenseClaims),
+    Invalid,
+}
+
+pub fn check_token(token: &str) -> TokenCheckResult {
+    match verify_token(token) {
+        Ok(claims) => TokenCheckResult::Valid(claims),
+        Err(_) => match read_expired_claims(token) {
+            Ok(claims) => TokenCheckResult::Expired(claims),
+            Err(_) => TokenCheckResult::Invalid,
+        },
+    }
+}
+
+/// Same signature check, but ignores expiry
+pub fn read_expired_claims(token: &str) -> Result<LicenseClaims, String> {
+    let decoding_key = DecodingKey::from_ec_pem(LICENSE_PUBLIC_KEY.as_bytes())
+        .map_err(|e| format!("Invalid public key: {}", e))?;
+
+    let mut validation = Validation::new(Algorithm::ES256);
+    validation.validate_exp = false;
+
+    let token_data = decode::<LicenseClaims>(token, &decoding_key, &validation)
+        .map_err(|e| format!("Token verification failed: {}", e))?;
+
+    Ok(token_data.claims)
+}
