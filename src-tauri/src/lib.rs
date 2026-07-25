@@ -6,6 +6,7 @@ mod llm_engine;
 mod question_engine;
 mod audio_engine;
 mod stt_engine;
+mod license;
 
 use rusqlite::Connection;
 use std::sync::Mutex;
@@ -36,6 +37,16 @@ fn greet(name: &str) -> String {
 fn test_audio_loopback() -> Result<String, String> {
     let bytes = audio_engine::loopback::test_capture(5)?;
     Ok(format!("Captured {} bytes in 5 seconds", bytes))
+}
+
+#[tauri::command]
+fn test_fingerprint() -> Result<String, String> {
+    license::fingerprint::get_device_fingerprint()
+}
+
+#[tauri::command]
+fn test_verify_token(token: String) -> Result<license::verify::LicenseClaims, String> {
+    license::verify::verify_token(&token)
 }
 
 #[tauri::command]
@@ -272,6 +283,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             test_audio_loopback,
+            test_fingerprint,
+            test_verify_token,
             test_deepgram_transcription,
             start_meeting_session,
             stop_meeting_session,

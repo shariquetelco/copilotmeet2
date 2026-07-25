@@ -1,0 +1,4 @@
+pub const LICENSE_PUBLIC_KEY: &str = "-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEJb9Zwtl/2+O8gdKDRZ3zfnLmnrnO
+4RE01YaoejwhxB2sgpuhvYZbd6PNI8loGXZTWdTPqPQ6hHTxqODbhTHd2w==
+-----END PUBLIC KEY-----";
