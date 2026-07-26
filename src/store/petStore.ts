@@ -27,6 +27,8 @@ export type SessionStatus =
   | "Question detected"
   | "Reconnecting audio..."
   | "Audio disconnected"
+  | "Trial ended"
+  | "Credits exhausted"
   | "Error";
 
 export interface QAEntry {
@@ -290,6 +292,14 @@ if (typeof window !== "undefined") {
 
     listen("audio_disconnected", () => {
       usePetStore.setState({ sessionStatus: "Audio disconnected", listening: false });
+    });
+
+    listen("trial_ended", () => {
+      usePetStore.setState({ sessionStatus: "Trial ended", listening: false });
+    });
+
+    listen("credits_exhausted", () => {
+      usePetStore.setState({ sessionStatus: "Credits exhausted", listening: false });
     });
 
     listen<string>("question_detected", (event) => {

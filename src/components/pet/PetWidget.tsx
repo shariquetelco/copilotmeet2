@@ -356,7 +356,9 @@ export default function PetWidget() {
                   toggleListening();
                 }}
                 className={`w-full rounded-xl px-4 py-3 mb-3 text-left transition-colors ${
-                  sessionStatus === "Audio disconnected"
+                  sessionStatus === "Trial ended" || sessionStatus === "Credits exhausted"
+                    ? "bg-purple-50 border border-purple-200"
+                    : sessionStatus === "Audio disconnected"
                     ? "bg-orange-50 border border-orange-200"
                     : listening
                     ? "bg-red-50 border border-red-200"
@@ -376,6 +378,16 @@ export default function PetWidget() {
                 <div className="text-[13px] text-muted-foreground mt-0.5">
                   {listening ? sessionStatus : "Ready"}
                 </div>
+                {sessionStatus === "Trial ended" && (
+                  <div className="text-[12px] text-purple-600 font-medium mt-1">
+                    Purchase a license to keep using CopilotMeet →
+                  </div>
+                )}
+                {sessionStatus === "Credits exhausted" && (
+                  <div className="text-[12px] text-purple-600 font-medium mt-1">
+                    Buy more AI credits to continue →
+                  </div>
+                )}
               </button>
 
               <div

@@ -52,6 +52,8 @@ type LicenseDetails = {
   masked_key: string | null;
   last_verified_at: number | null;
   expires_at: number | null;
+  deepgram_source: string | null;
+  groq_source: string | null;
 };
 
 function timeAgo(unixSeconds: number | null): string {
@@ -142,6 +144,13 @@ function LicenseSection() {
           </SettingRow>
         </>
       )}
+
+      <SettingRow label="Speech (Deepgram)">
+        <span className="text-[14px] text-muted-foreground">{details.deepgram_source ?? "—"}</span>
+      </SettingRow>
+      <SettingRow label="AI (Groq)">
+        <span className="text-[14px] text-muted-foreground">{details.groq_source ?? "—"}</span>
+      </SettingRow>
 
       <SettingRow label="Last Verified">
         <span className="text-[14px] text-muted-foreground">{timeAgo(details.last_verified_at)}</span>
