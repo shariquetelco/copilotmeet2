@@ -203,13 +203,202 @@ fn get_project_brief(state: State<AppState>, project_id: String) -> Result<Optio
     Ok(raw.and_then(|json| serde_json::from_str(&json).ok()))
 }
 
+#[derive(serde::Serialize)]
+struct NewDocumentsCheck {
+    new_document_count: usize,
+}
+
+#[tauri::command]
+fn check_new_documents(state: State<AppState>, project_id: String) -> Result<NewDocumentsCheck, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    let current_ids: std::collections::HashSet<String> =
+        repositories::document::DocumentRepository::list_by_project(&conn, &project_id)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|d| d.status == "ready")
+            .map(|d| d.id)
+            .collect();
+
+    let trained_ids: std::collections::HashSet<String> = repositories::settings::SettingsRepository::get(
+        &conn,
+        &format!("project_brief.{}", project_id),
+    )
+    .ok()
+    .flatten()
+    .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+    .and_then(|v| v["document_ids"].as_array().cloned())
+    .map(|arr| arr.into_iter().filter_map(|v| v.as_str().map(String::from)).collect())
+    .unwrap_or_default();
+
+    let new_count = current_ids.difference(&trained_ids).count();
+    Ok(NewDocumentsCheck { new_document_count: new_count })
+}
+
+/// Lighter than a full train — only reads documents added since the
+/// last training run, and asks the LLM to fold new material into the
+/// existing summary rather than re-analyzing everything from scratch.
+#[tauri::command]
+async fn optimize_knowledge(app: tauri::AppHandle, state: State<'_, AppState>, project_id: String) -> Result<TrainingReport, String> {
+    let (previous_summary, previous_doc_ids, project_name): (String, Vec<String>, String) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+        let existing = repositories::settings::SettingsRepository::get(&conn, &format!("project_brief.{}", project_id))
+            .ok()
+            .flatten()
+            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+            .ok_or("This project hasn't been trained yet — use Train CoPilot Project first.")?;
+
+        let summary = existing["summary"].as_str().unwrap_or_default().to_string();
+        let doc_ids: Vec<String> = existing["document_ids"]
+            .as_array()
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+
+        let name = repositories::project::ProjectRepository::list(&conn)
+            .ok()
+            .and_then(|projects| projects.into_iter().find(|p| p.id == project_id))
+            .map(|p| p.name)
+            .unwrap_or_else(|| "this project".to_string());
+
+        (summary, doc_ids, name)
+    };
+
+    let (new_content, all_doc_ids, word_count, document_count, keyterms): (String, Vec<String>, usize, usize, Vec<String>) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+        let documents: Vec<_> = repositories::document::DocumentRepository::list_by_project(&conn, &project_id)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|d| d.status == "ready")
+            .collect();
+        let all_doc_ids: Vec<String> = documents.iter().map(|d| d.id.clone()).collect();
+        let new_doc_ids: std::collections::HashSet<&String> = all_doc_ids
+            .iter()
+            .filter(|id| !previous_doc_ids.contains(id))
+            .collect();
+
+        let chunks = repositories::chunk::ChunkRepository::list_by_project(&conn, &project_id)
+            .map_err(|e| e.to_string())?;
+
+        let new_content: String = chunks
+            .iter()
+            .filter(|c| new_doc_ids.contains(&c.document_id))
+            .take(8)
+            .map(|c| c.content.clone())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let word_count: usize = chunks.iter().map(|c| c.content.split_whitespace().count()).sum();
+        let keyterms = rag_engine::keyterms::extract_keyterms(&conn, &project_id).unwrap_or_default();
+
+        (new_content, all_doc_ids, word_count, documents.len(), keyterms)
+    };
+
+    if new_content.trim().is_empty() {
+        return Err("No new documents found since the last training run.".to_string());
+    }
+
+    let prompt = format!(
+        "Here is the existing summary of a project called \"{}\":\n{}\n\nHere is new content that was just added:\n{}\n\nWrite an updated 3-4 sentence summary that incorporates the new material, and list up to 5 key topics, technologies, or people mentioned across everything, old and new.",
+        project_name, previous_summary, new_content
+    );
+
+    let broker_identity: Option<license::broker::BrokerIdentity> = {
+        use crate::license::status::read_token;
+        use crate::license::verify::{check_token, TokenCheckResult};
+        use crate::license::broker::BrokerIdentity;
+
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let top_provider = repositories::settings::SettingsRepository::get(&conn, "ai.llm_provider_priority")
+            .ok()
+            .flatten()
+            .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+            .and_then(|list| list.into_iter().next())
+            .unwrap_or_else(|| "groq".to_string());
+
+        read_token(&conn).and_then(|t| match check_token(&t) {
+            TokenCheckResult::Valid(claims) if claims.token_type == "trial" => {
+                claims.trial_session_id.map(BrokerIdentity::Trial)
+            }
+            TokenCheckResult::Valid(claims) if top_provider == "groq" => {
+                let has_groq_key = repositories::api_keys::ApiKeyRepository::get(&conn, "groq")
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if has_groq_key {
+                    None
+                } else {
+                    claims.license_id.map(BrokerIdentity::License)
+                }
+            }
+            _ => None,
+        })
+    };
+
+    let summary = if let Some(identity) = broker_identity {
+        license::broker::ask_groq_stream(&identity, &prompt, |_| {}).await?
+    } else {
+        let (provider, key) = {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            let provider_str = repositories::settings::SettingsRepository::get(&conn, "ai.llm_provider_priority")
+                .ok()
+                .flatten()
+                .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+                .and_then(|list| list.into_iter().next())
+                .unwrap_or_else(|| "groq".to_string());
+            let provider = llm_engine::LlmProvider::from_str(&provider_str)
+                .ok_or_else(|| format!("Unknown provider: {}", provider_str))?;
+            let key = repositories::api_keys::ApiKeyRepository::get(&conn, provider.as_str())
+                .map_err(|e| e.to_string())?
+                .ok_or("No API key configured. Add one in AI Settings.")?;
+            (provider, key)
+        };
+        llm_engine::ask(provider, &key, &prompt).await?
+    };
+
+    let generated_at = chrono::Utc::now().to_rfc3339();
+
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let profile = serde_json::json!({
+            "summary": summary,
+            "word_count": word_count,
+            "document_count": document_count,
+            "keyterm_count": keyterms.len(),
+            "generated_at": generated_at,
+            "document_ids": all_doc_ids,
+        });
+        let _ = repositories::settings::SettingsRepository::set(
+            &conn,
+            &format!("project_brief.{}", project_id),
+            &profile.to_string(),
+            &generated_at,
+        );
+    }
+
+    let _ = app.emit("training_complete", &project_id);
+
+    Ok(TrainingReport {
+        project_name,
+        document_count,
+        word_count,
+        keyterm_count: keyterms.len(),
+        summary,
+        generated_at,
+    })
+}
+
 #[tauri::command]
 async fn train_project(app: tauri::AppHandle, state: State<'_, AppState>, project_id: String) -> Result<TrainingReport, String> {
     let (word_count, document_count, keyterms, sample_content, project_name) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;
 
-        let documents = repositories::document::DocumentRepository::list_by_project(&conn, &project_id)
-            .map_err(|e| e.to_string())?;
+        let documents: Vec<_> = repositories::document::DocumentRepository::list_by_project(&conn, &project_id)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|d| d.status == "ready")
+            .collect();
         let chunks = repositories::chunk::ChunkRepository::list_by_project(&conn, &project_id)
             .map_err(|e| e.to_string())?;
         let keyterms = rag_engine::keyterms::extract_keyterms(&conn, &project_id).unwrap_or_default();
@@ -298,6 +487,15 @@ async fn train_project(app: tauri::AppHandle, state: State<'_, AppState>, projec
 
     let generated_at = chrono::Utc::now().to_rfc3339();
 
+    let document_ids: Vec<String> = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        repositories::document::DocumentRepository::list_by_project(&conn, &project_id)
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|d| d.id)
+            .collect()
+    };
+
     // Save the real profile — this is what future live answers will draw
     // on, not just today's report display.
     {
@@ -308,6 +506,7 @@ async fn train_project(app: tauri::AppHandle, state: State<'_, AppState>, projec
             "document_count": document_count,
             "keyterm_count": keyterms.len(),
             "generated_at": generated_at,
+            "document_ids": document_ids,
         });
         let _ = repositories::settings::SettingsRepository::set(
             &conn,
@@ -834,6 +1033,10 @@ pub fn run() {
             get_qa_history,
             get_project_knowledge_stats,
             train_project,
+            get_project_brief,
+            get_project_brief,
+            check_new_documents,
+            optimize_knowledge,
             verify_provider_key,
             test_broker_token,
             test_deepgram_transcription,
