@@ -169,6 +169,39 @@ fn get_qa_history(state: State<AppState>, project_id: String, limit: u32) -> Res
         .map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+struct ProjectKnowledgeStats {
+    document_count: usize,
+    word_count: usize,
+    ready_to_train: bool,
+}
+
+/// The real gate for "Train CoPilot Project" — document count OR word
+/// count, never MB. A 20MB scan can have almost no usable text; a 3MB
+/// set of clean transcripts can have tens of thousands of words. Only
+/// the actual extracted content tells you if there's enough to work with.
+#[tauri::command]
+fn get_project_knowledge_stats(state: State<AppState>, project_id: String) -> Result<ProjectKnowledgeStats, String> {
+    const MIN_DOCUMENTS: usize = 5;
+    const MIN_WORDS: usize = 5000;
+
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    let documents = repositories::document::DocumentRepository::list_by_project(&conn, &project_id)
+        .map_err(|e| e.to_string())?;
+    let chunks = repositories::chunk::ChunkRepository::list_by_project(&conn, &project_id)
+        .map_err(|e| e.to_string())?;
+
+    let word_count: usize = chunks.iter().map(|c| c.content.split_whitespace().count()).sum();
+    let document_count = documents.len();
+
+    Ok(ProjectKnowledgeStats {
+        document_count,
+        word_count,
+        ready_to_train: document_count >= MIN_DOCUMENTS || word_count >= MIN_WORDS,
+    })
+}
+
 #[tauri::command]
 fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, String> {
     use license::status::{read_last_verified, read_token};
@@ -650,6 +683,7 @@ pub fn run() {
             get_license_details,
             create_credit_checkout,
             get_qa_history,
+            get_project_knowledge_stats,
             verify_provider_key,
             test_broker_token,
             test_deepgram_transcription,
