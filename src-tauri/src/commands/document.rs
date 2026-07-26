@@ -206,6 +206,32 @@ pub async fn ask_pet(
         recent_history: recent_history.unwrap_or_default(),
     });
 
+    let session_id: String = {
+        let mut current = state.current_session_id.lock().map_err(|e| e.to_string())?;
+        match current.as_ref() {
+            Some(id) => id.clone(),
+            None => {
+                let new_id = uuid::Uuid::new_v4().to_string();
+                let conn = state.db.lock().map_err(|e| e.to_string())?;
+                crate::repositories::session::SessionRepository::create(
+                    &conn,
+                    &crate::repositories::session::Session {
+                        id: new_id.clone(),
+                        project_id: project_id.clone(),
+                        title: None,
+                        meeting_source: "Manual".to_string(),
+                        status: "active".to_string(),
+                        started_at: chrono::Utc::now().to_rfc3339(),
+                        ended_at: None,
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+                *current = Some(new_id.clone());
+                new_id
+            }
+        }
+    };
+
     let broker_identity: Option<crate::license::broker::BrokerIdentity> = {
         use crate::license::status::read_token;
         use crate::license::verify::{check_token, TokenCheckResult};
@@ -296,6 +322,25 @@ pub async fn ask_pet(
 
     let _ = app.emit("answer_done", ());
     println!("LLM ({}): {}ms", provider_label, llm_start.elapsed().as_millis());
+
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let _ = crate::repositories::qa_entry::QaEntryRepository::create(
+            &conn,
+            &crate::repositories::qa_entry::QaEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                session_id,
+                question: question.clone(),
+                rag_answer: Some(answer.clone()),
+                rag_confidence: None,
+                llm_answer: None,
+                llm_confidence: None,
+                answer_source: provider_label,
+                pinned: false,
+                timestamp: chrono::Utc::now().to_rfc3339(),
+            },
+        );
+    }
 
     Ok(AskPetResponse {
         answer,

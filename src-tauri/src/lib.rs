@@ -20,6 +20,7 @@ use commands::document::{upload_document, list_documents, delete_document, get_p
 pub struct AppState {
     pub db: Mutex<Connection>,
     pub audio_session: Mutex<Option<AudioSession>>,
+    pub current_session_id: Mutex<Option<String>>,
 }
 
 pub struct AudioSession {
@@ -159,6 +160,13 @@ fn provider_source(conn: &rusqlite::Connection, provider: &str, is_trial: bool) 
 async fn test_broker_token(trial_session_id: String) -> Result<license::broker::DeepgramTokenResponse, String> {
     let identity = license::broker::BrokerIdentity::Trial(trial_session_id);
     license::broker::request_deepgram_token(&identity).await
+}
+
+#[tauri::command]
+fn get_qa_history(state: State<AppState>, project_id: String, limit: u32) -> Result<Vec<repositories::qa_entry::QaEntry>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repositories::qa_entry::QaEntryRepository::list_by_project(&conn, &project_id, limit)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -346,6 +354,28 @@ async fn determine_auth_mode(state: &State<'_, AppState>) -> Result<AuthMode, St
 #[tauri::command]
 async fn start_meeting_session(app: tauri::AppHandle, state: State<'_, AppState>, project_id: Option<String>) -> Result<(), String> {
     {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().to_rfc3339();
+        repositories::session::SessionRepository::create(
+            &conn,
+            &repositories::session::Session {
+                id: session_id.clone(),
+                project_id: project_id.clone(),
+                title: None,
+                meeting_source: "Live Meeting".to_string(),
+                status: "active".to_string(),
+                started_at: now,
+                ended_at: None,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+
+        let mut current = state.current_session_id.lock().map_err(|e| e.to_string())?;
+        *current = Some(session_id);
+    }
+
+    {
         let mut session = state.audio_session.lock().map_err(|e| e.to_string())?;
         if let Some(stale) = session.take() {
             println!("Cleaning up stale session before starting a new one.");
@@ -525,6 +555,14 @@ fn stop_meeting_session(state: State<AppState>) -> Result<(), String> {
         }
         println!("Session stopped.");
     }
+
+    let mut current = state.current_session_id.lock().map_err(|e| e.to_string())?;
+    if let Some(session_id) = current.take() {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let _ = repositories::session::SessionRepository::end_session(&conn, &session_id, &now);
+    }
+
     Ok(())
 }
 
@@ -591,6 +629,7 @@ pub fn run() {
             app.manage(AppState {
                 db: Mutex::new(conn),
                 audio_session: Mutex::new(None),
+                current_session_id: Mutex::new(None),
             });
 
             // Warm the embedding model at startup so the cost lands here,
@@ -610,6 +649,7 @@ pub fn run() {
             start_trial,
             get_license_details,
             create_credit_checkout,
+            get_qa_history,
             verify_provider_key,
             test_broker_token,
             test_deepgram_transcription,
