@@ -2,7 +2,43 @@ import { useEffect, useState } from "react";
 import { useDocumentStore } from "@/store/documentStore";
 import { Document, FREE_TIER_LIMIT_BYTES, documentService, SearchResult } from "@/lib/documentService";
 import ProcessingStepper from "@/components/documents/ProcessingStepper";
-import { Search } from "lucide-react";
+import { Search, Sparkles } from "lucide-react";
+
+function TrainProjectSection({ projectId }: { projectId: string }) {
+  const [stats, setStats] = useState<{ document_count: number; word_count: number; ready_to_train: boolean } | null>(null);
+  const [projectName, setProjectName] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const s = await invoke<typeof stats>("get_project_knowledge_stats", { projectId });
+      setStats(s);
+
+      const { projectService } = await import("@/lib/projectService");
+      const projects = await projectService.list();
+      setProjectName(projects.find((p: any) => p.id === projectId)?.name ?? "");
+    })();
+  }, [projectId]);
+
+  if (!stats || !stats.ready_to_train) return null;
+
+  return (
+    <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-2xl p-5 mb-6 flex items-center justify-between">
+      <div>
+        <div className="flex items-center gap-2 text-[16px] font-bold text-foreground">
+          <Sparkles size={18} className="text-purple-600" />
+          Ready to personalize
+        </div>
+        <p className="text-[14px] text-muted-foreground mt-1">
+          {stats.document_count} document{stats.document_count === 1 ? "" : "s"}, {stats.word_count.toLocaleString()} words analyzed.
+        </p>
+      </div>
+      <button className="px-5 py-2.5 bg-primary text-white rounded-xl text-[14px] font-semibold whitespace-nowrap">
+        Train CoPilot Project {projectName}
+      </button>
+    </div>
+  );
+}
 
 function KnowledgeSearch({ projectId }: { projectId: string }) {
   const [query, setQuery] = useState("");
@@ -197,6 +233,7 @@ export default function DocumentsPage({ projectId }: { projectId: string }) {
   return (
     <div>
       <StorageMeter used={storageUsed} limit={FREE_TIER_LIMIT_BYTES} />
+      <TrainProjectSection projectId={projectId} />
       <KnowledgeSearch projectId={projectId} />
 
       {error && (
