@@ -20,7 +20,40 @@ function TrainProjectSection({ projectId }: { projectId: string }) {
     })();
   }, [projectId]);
 
+  const [training, setTraining] = useState(false);
+  const [report, setReport] = useState<any>(null);
+  const [error, setError] = useState("");
+
+  async function handleTrain() {
+    setTraining(true);
+    setError("");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("train_project", { projectId });
+      setReport(result);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setTraining(false);
+    }
+  }
+
   if (!stats || !stats.ready_to_train) return null;
+
+  if (report) {
+    return (
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-2xl p-5 mb-6">
+        <div className="flex items-center gap-2 text-[16px] font-bold text-foreground mb-2">
+          <Sparkles size={18} className="text-purple-600" />
+          {report.project_name} is personalized
+        </div>
+        <p className="text-[14px] text-foreground mb-3">{report.summary}</p>
+        <p className="text-[13px] text-muted-foreground">
+          {report.document_count} documents · {report.word_count.toLocaleString()} words · {report.keyterm_count} key terms
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-2xl p-5 mb-6 flex items-center justify-between">
@@ -32,9 +65,14 @@ function TrainProjectSection({ projectId }: { projectId: string }) {
         <p className="text-[14px] text-muted-foreground mt-1">
           {stats.document_count} document{stats.document_count === 1 ? "" : "s"}, {stats.word_count.toLocaleString()} words analyzed.
         </p>
+        {error && <p className="text-[13px] text-red-600 mt-1">{error}</p>}
       </div>
-      <button className="px-5 py-2.5 bg-primary text-white rounded-xl text-[14px] font-semibold whitespace-nowrap">
-        Train CoPilot Project {projectName}
+      <button
+        onClick={handleTrain}
+        disabled={training}
+        className="px-5 py-2.5 bg-primary text-white rounded-xl text-[14px] font-semibold whitespace-nowrap disabled:opacity-50"
+      >
+        {training ? "Training..." : `Train CoPilot Project ${projectName}`}
       </button>
     </div>
   );

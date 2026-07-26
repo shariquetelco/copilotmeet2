@@ -180,6 +180,147 @@ struct ProjectKnowledgeStats {
 /// count, never MB. A 20MB scan can have almost no usable text; a 3MB
 /// set of clean transcripts can have tens of thousands of words. Only
 /// the actual extracted content tells you if there's enough to work with.
+#[derive(serde::Serialize)]
+struct TrainingReport {
+    project_name: String,
+    document_count: usize,
+    word_count: usize,
+    keyterm_count: usize,
+    summary: String,
+    generated_at: String,
+}
+
+/// The real work behind "Train CoPilot Project": free local statistics
+/// (word/document counts, keyword extraction — already built, zero cost)
+/// plus exactly one bounded LLM call to pull out a project summary and
+/// highlights from a sample of the actual content. Not per-document, one
+/// call total, to keep cost predictable regardless of project size.
+#[tauri::command]
+async fn train_project(app: tauri::AppHandle, state: State<'_, AppState>, project_id: String) -> Result<TrainingReport, String> {
+    let (word_count, document_count, keyterms, sample_content, project_name) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+        let documents = repositories::document::DocumentRepository::list_by_project(&conn, &project_id)
+            .map_err(|e| e.to_string())?;
+        let chunks = repositories::chunk::ChunkRepository::list_by_project(&conn, &project_id)
+            .map_err(|e| e.to_string())?;
+        let keyterms = rag_engine::keyterms::extract_keyterms(&conn, &project_id).unwrap_or_default();
+
+        let word_count: usize = chunks.iter().map(|c| c.content.split_whitespace().count()).sum();
+        let document_count = documents.len();
+
+        // A bounded sample, not the whole project — keeps the one LLM
+        // call's cost predictable regardless of how large the project is.
+        let sample_content: String = chunks
+            .iter()
+            .take(8)
+            .map(|c| c.content.clone())
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        let project_name = repositories::project::ProjectRepository::list(&conn)
+            .ok()
+            .and_then(|projects| projects.into_iter().find(|p| p.id == project_id))
+            .map(|p| p.name)
+            .unwrap_or_else(|| "this project".to_string());
+
+        (word_count, document_count, keyterms, sample_content, project_name)
+    };
+
+    let prompt = format!(
+        "You are analyzing documents for a project called \"{}\". Based on the content below, write a short 3-4 sentence summary of what this project is about, and list up to 5 key topics, technologies, or people mentioned. Keep it factual, based only on the content given.\n\nContent:\n{}",
+        project_name, sample_content
+    );
+
+    // Reuse the exact same broker-vs-BYOK resolution ask_pet already uses
+    // — trial, OR Licensed-with-no-Groq-key falling back to credits, OR
+    // BYOK — so training respects the same rules as live answers.
+    let broker_identity: Option<license::broker::BrokerIdentity> = {
+        use crate::license::status::read_token;
+        use crate::license::verify::{check_token, TokenCheckResult};
+        use crate::license::broker::BrokerIdentity;
+
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let top_provider = repositories::settings::SettingsRepository::get(&conn, "ai.llm_provider_priority")
+            .ok()
+            .flatten()
+            .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+            .and_then(|list| list.into_iter().next())
+            .unwrap_or_else(|| "groq".to_string());
+
+        read_token(&conn).and_then(|t| match check_token(&t) {
+            TokenCheckResult::Valid(claims) if claims.token_type == "trial" => {
+                claims.trial_session_id.map(BrokerIdentity::Trial)
+            }
+            TokenCheckResult::Valid(claims) if top_provider == "groq" => {
+                let has_groq_key = repositories::api_keys::ApiKeyRepository::get(&conn, "groq")
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if has_groq_key {
+                    None
+                } else {
+                    claims.license_id.map(BrokerIdentity::License)
+                }
+            }
+            _ => None,
+        })
+    };
+
+    let summary = if let Some(identity) = broker_identity {
+        license::broker::ask_groq_stream(&identity, &prompt, |_| {}).await?
+    } else {
+        let (provider, key) = {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            let provider_str = repositories::settings::SettingsRepository::get(&conn, "ai.llm_provider_priority")
+                .ok()
+                .flatten()
+                .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+                .and_then(|list| list.into_iter().next())
+                .unwrap_or_else(|| "groq".to_string());
+            let provider = llm_engine::LlmProvider::from_str(&provider_str)
+                .ok_or_else(|| format!("Unknown provider: {}", provider_str))?;
+            let key = repositories::api_keys::ApiKeyRepository::get(&conn, provider.as_str())
+                .map_err(|e| e.to_string())?
+                .ok_or("No API key configured for training. Add one in AI Settings.")?;
+            (provider, key)
+        };
+        llm_engine::ask(provider, &key, &prompt).await?
+    };
+
+    let generated_at = chrono::Utc::now().to_rfc3339();
+
+    // Save the real profile — this is what future live answers will draw
+    // on, not just today's report display.
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let profile = serde_json::json!({
+            "summary": summary,
+            "word_count": word_count,
+            "document_count": document_count,
+            "keyterm_count": keyterms.len(),
+            "generated_at": generated_at,
+        });
+        let _ = repositories::settings::SettingsRepository::set(
+            &conn,
+            &format!("project_brief.{}", project_id),
+            &profile.to_string(),
+            &generated_at,
+        );
+    }
+
+    let _ = app.emit("training_complete", &project_id);
+
+    Ok(TrainingReport {
+        project_name,
+        document_count,
+        word_count,
+        keyterm_count: keyterms.len(),
+        summary,
+        generated_at,
+    })
+}
+
 #[tauri::command]
 fn get_project_knowledge_stats(state: State<AppState>, project_id: String) -> Result<ProjectKnowledgeStats, String> {
     const MIN_DOCUMENTS: usize = 5;
@@ -684,6 +825,7 @@ pub fn run() {
             create_credit_checkout,
             get_qa_history,
             get_project_knowledge_stats,
+            train_project,
             verify_provider_key,
             test_broker_token,
             test_deepgram_transcription,
