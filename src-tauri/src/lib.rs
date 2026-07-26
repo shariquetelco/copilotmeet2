@@ -128,6 +128,7 @@ async fn activate_license(state: State<'_, AppState>, license_key: String) -> Re
 #[derive(serde::Serialize)]
 struct LicenseDetails {
     mode: String,
+    license_id: Option<String>,
     plan: Option<String>,
     email: Option<String>,
     max_devices: Option<u32>,
@@ -172,6 +173,7 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
         None => {
             return Ok(LicenseDetails {
                 mode: "ActivationRequired".to_string(),
+                license_id: None,
                 plan: None,
                 email: None,
                 max_devices: None,
@@ -190,6 +192,7 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
         TokenCheckResult::Invalid => {
             return Ok(LicenseDetails {
                 mode: "ActivationRequired".to_string(),
+                license_id: None,
                 plan: None,
                 email: None,
                 max_devices: None,
@@ -220,6 +223,7 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
 
     Ok(LicenseDetails {
         mode: if is_trial { "Trial".to_string() } else { "Licensed".to_string() },
+        license_id: claims.license_id,
         plan: claims.plan,
         email: claims.email,
         max_devices: claims.max_devices,
@@ -230,6 +234,41 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
         deepgram_source: Some(provider_source(&conn, "deepgram", is_trial)),
         groq_source: Some(provider_source(&conn, "groq", is_trial)),
     })
+}
+
+#[tauri::command]
+async fn create_credit_checkout(state: State<'_, AppState>, quantity: u32) -> Result<String, String> {
+    use license::status::read_token;
+    use license::verify::{check_token, TokenCheckResult};
+
+    let license_id = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        read_token(&conn)
+            .and_then(|t| match check_token(&t) {
+                TokenCheckResult::Valid(claims) => claims.license_id,
+                _ => None,
+            })
+            .ok_or("No active license found")?
+    };
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("http://localhost:3000/api/stripe/checkout-credits")
+        .json(&serde_json::json!({ "licenseId": license_id, "quantity": quantity }))
+        .send()
+        .await
+        .map_err(|e| format!("Checkout request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(text);
+    }
+
+    let data: serde_json::Value = response.json().await.map_err(|e| e.to_string())?;
+    data["url"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or("No checkout URL returned".to_string())
 }
 
 #[tauri::command]
@@ -560,6 +599,7 @@ pub fn run() {
             activate_license,
             start_trial,
             get_license_details,
+            create_credit_checkout,
             test_broker_token,
             test_deepgram_transcription,
             start_meeting_session,

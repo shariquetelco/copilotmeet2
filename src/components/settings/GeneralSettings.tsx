@@ -45,6 +45,7 @@ function SectionCard({ title, children }: { title: string; children: React.React
 
 type LicenseDetails = {
   mode: string;
+  license_id: string | null;
   plan: string | null;
   email: string | null;
   max_devices: number | null;
@@ -155,7 +156,66 @@ function LicenseSection() {
       <SettingRow label="Last Verified">
         <span className="text-[14px] text-muted-foreground">{timeAgo(details.last_verified_at)}</span>
       </SettingRow>
+
+      {details.mode === "Licensed" && details.license_id && (
+        <BuyCreditsSection licenseId={details.license_id} />
+      )}
     </SectionCard>
+  );
+}
+
+function BuyCreditsSection({ licenseId }: { licenseId: string }) {
+  const [quantity, setQuantity] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const hours = quantity * 2;
+  const total = quantity * 5;
+
+  async function handleBuy() {
+    setError("");
+    setLoading(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const url = await invoke<string>("create_credit_checkout", { quantity });
+
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-border">
+      <div className="text-[14px] font-semibold mb-2">Buy AI Credits</div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+          className="w-8 h-8 rounded-lg border border-border text-[16px] font-semibold"
+        >
+          −
+        </button>
+        <span className="text-[14px] w-24 text-center">{hours} hours</span>
+        <button
+          onClick={() => setQuantity((q) => q + 1)}
+          className="w-8 h-8 rounded-lg border border-border text-[16px] font-semibold"
+        >
+          +
+        </button>
+        <span className="text-[14px] text-muted-foreground ml-2">€{total}</span>
+      </div>
+      <button
+        onClick={handleBuy}
+        disabled={loading}
+        className="mt-3 px-5 py-2.5 bg-primary text-white rounded-xl text-[14px] font-semibold disabled:opacity-50"
+      >
+        {loading ? "Opening checkout..." : "Buy Credits"}
+      </button>
+      {error && <p className="text-red-600 text-[13px] mt-2">{error}</p>}
+    </div>
   );
 }
 
