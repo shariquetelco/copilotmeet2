@@ -105,22 +105,27 @@ export const usePetStore = create<PetStore>((set, get) => ({
   setPersona: (persona) => {
     set({ persona });
     settingsService.set("pet.persona", persona);
+    broadcastPetSettingsChanged();
   },
   setSize: (size) => {
     set({ size });
     settingsService.set("pet.size", size);
+    broadcastPetSettingsChanged();
   },
   setPosition: (position) => {
     set({ position });
     settingsService.set("pet.position", position);
+    broadcastPetSettingsChanged();
   },
   setOpacityIdle: (opacityIdle) => {
     set({ opacityIdle });
     settingsService.set("pet.opacity_idle", String(opacityIdle));
+    broadcastPetSettingsChanged();
   },
   setAlwaysOnTop: (alwaysOnTop) => {
     set({ alwaysOnTop });
     settingsService.set("pet.always_on_top", String(alwaysOnTop));
+    broadcastPetSettingsChanged();
   },
 
   addQAEntry: (entry) =>
@@ -277,8 +282,16 @@ export const usePetStore = create<PetStore>((set, get) => ({
   },
 }));
 
+export async function broadcastPetSettingsChanged() {
+  const { emit } = await import("@tauri-apps/api/event");
+  await emit("pet_settings_changed");
+}
+
 if (typeof window !== "undefined") {
   import("@tauri-apps/api/event").then(({ listen }) => {
+    listen("pet_settings_changed", () => {
+      usePetStore.getState().hydrate();
+    });
     listen("audio_reconnecting", () => {
       usePetStore.setState({ sessionStatus: "Reconnecting audio..." });
     });

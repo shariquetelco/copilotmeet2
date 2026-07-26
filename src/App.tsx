@@ -90,7 +90,7 @@ function App() {
   const [isPetWindow, setIsPetWindow] = useState<boolean | null>(null);
 
   useEffect(() => {
-    import("@tauri-apps/api/window").then(async ({ getCurrentWindow, currentMonitor }) => {
+    import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
       const win = getCurrentWindow();
       const isPet = win.label === "pet";
       setIsPetWindow(isPet);
@@ -103,30 +103,13 @@ function App() {
         document.documentElement.style.margin = "0";
         document.body.style.margin = "0";
 
-        const { LogicalPosition } = await import("@tauri-apps/api/dpi");
-        const monitor = await currentMonitor();
-        const dockPosition = (await settingsService.get("pet.position")) || "bottom-right";
+        const { resetPetWindowPosition } = await import("@/lib/petWindow");
+        await resetPetWindowPosition();
 
-        if (monitor) {
-          const margin = 24;
-          const scale = monitor.scaleFactor;
-          const winSize = await win.outerSize();
-          const monitorX = monitor.position.x / scale;
-          const monitorY = monitor.position.y / scale;
-          const monitorW = monitor.size.width / scale;
-          const monitorH = monitor.size.height / scale;
-          const w = winSize.width / scale;
-          const h = winSize.height / scale;
-
-          const corners: Record<string, { x: number; y: number }> = {
-            "top-left": { x: monitorX + margin, y: monitorY + margin },
-            "top-right": { x: monitorX + monitorW - w - margin, y: monitorY + margin },
-            "bottom-left": { x: monitorX + margin, y: monitorY + monitorH - h - margin },
-            "bottom-right": { x: monitorX + monitorW - w - margin, y: monitorY + monitorH - h - margin },
-          };
-          const target = corners[dockPosition] ?? corners["bottom-right"];
-          await win.setPosition(new LogicalPosition(target.x, target.y));
-        }
+        const { listen } = await import("@tauri-apps/api/event");
+        listen("pet_settings_changed", () => {
+          resetPetWindowPosition();
+        });
       }
     });
     hydrate();

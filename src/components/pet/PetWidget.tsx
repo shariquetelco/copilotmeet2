@@ -176,6 +176,56 @@ function QAEntryCard({
   );
 }
 
+function AIReadyDialog({
+  reason,
+  onDismiss,
+}: {
+  reason: "Trial ended" | "Credits exhausted";
+  onDismiss: () => void;
+}) {
+  async function openMainWindow() {
+    const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    const main = await WebviewWindow.getByLabel("main");
+    if (main) {
+      await main.show();
+      await main.setFocus();
+    }
+  }
+
+  return (
+    <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-50 rounded-3xl">
+      <div className="bg-white rounded-2xl p-5 w-[90%] shadow-xl">
+        <h3 className="text-[16px] font-bold mb-1">You're almost ready</h3>
+        <p className="text-[13px] text-muted-foreground mb-4">
+          {reason === "Trial ended"
+            ? "Your trial has ended. Purchase a license to continue."
+            : "You're out of AI credits. Add more, or connect your own API keys."}
+        </p>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={openMainWindow}
+            className="w-full py-2.5 bg-primary text-white rounded-xl text-[14px] font-semibold"
+          >
+            {reason === "Trial ended" ? "Purchase License" : "Buy CopilotMeet Credits"}
+          </button>
+          <button
+            onClick={openMainWindow}
+            className="w-full py-2.5 border border-border rounded-xl text-[14px] font-semibold"
+          >
+            Configure API Keys (BYOK)
+          </button>
+          <button
+            onClick={onDismiss}
+            className="w-full py-2 text-[13px] text-muted-foreground"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PetWidget() {
   const {
     status,
@@ -199,6 +249,8 @@ export default function PetWidget() {
 
   const [manualQuestion, setManualQuestion] = useState("");
   const [projects, setProjects] = useState<{ id: string; name: string; is_active: boolean }[]>([]);
+  const hasProjectContext =
+    selectedProjectId === "__all__" || Boolean(selectedProjectId) || projects.some((p) => p.is_active);
 
   useEffect(() => {
     projectService.list().then(setProjects);
@@ -342,6 +394,11 @@ export default function PetWidget() {
                   ))}
                   <option value="__all__">🌐 All Projects</option>
                 </select>
+                {!hasProjectContext && (
+                  <p className="text-[12px] text-orange-600 mt-1">
+                    Select a project above before starting a meeting or asking a question.
+                  </p>
+                )}
               </div>
 
               {toast && (
@@ -353,9 +410,12 @@ export default function PetWidget() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  toggleListening();
+                  if (hasProjectContext) toggleListening();
                 }}
+                disabled={!hasProjectContext}
                 className={`w-full rounded-xl px-4 py-3 mb-3 text-left transition-colors ${
+                  !hasProjectContext ? "opacity-50 cursor-not-allowed" : ""
+                } ${
                   sessionStatus === "Trial ended" || sessionStatus === "Credits exhausted"
                     ? "bg-purple-50 border border-purple-200"
                     : sessionStatus === "Audio disconnected"
@@ -378,17 +438,14 @@ export default function PetWidget() {
                 <div className="text-[13px] text-muted-foreground mt-0.5">
                   {listening ? sessionStatus : "Ready"}
                 </div>
-                {sessionStatus === "Trial ended" && (
-                  <div className="text-[12px] text-purple-600 font-medium mt-1">
-                    Purchase a license to keep using CopilotMeet →
-                  </div>
-                )}
-                {sessionStatus === "Credits exhausted" && (
-                  <div className="text-[12px] text-purple-600 font-medium mt-1">
-                    Buy more AI credits to continue →
-                  </div>
-                )}
-              </button>
+                </button>
+
+              {(sessionStatus === "Trial ended" || sessionStatus === "Credits exhausted") && (
+                <AIReadyDialog
+                  reason={sessionStatus}
+                  onDismiss={() => usePetStore.setState({ sessionStatus: "Stopped" })}
+                />
+              )}
 
               <div
                 onClick={(e) => e.stopPropagation()}
@@ -399,13 +456,14 @@ export default function PetWidget() {
                   value={manualQuestion}
                   onChange={(e) => setManualQuestion(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && manualQuestion.trim()) {
+                    if (e.key === "Enter" && manualQuestion.trim() && hasProjectContext) {
                       askQuestion(manualQuestion.trim());
                       setManualQuestion("");
                     }
                   }}
-                  placeholder="Ask a question (manual, until live audio exists)…"
-                  className="flex-1 border border-border rounded-lg px-3 py-2 text-[14px] bg-white"
+                  disabled={!hasProjectContext}
+                  placeholder={hasProjectContext ? "Ask a question…" : "Select a project first…"}
+                  className="flex-1 border border-border rounded-lg px-3 py-2 text-[14px] bg-white disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
 

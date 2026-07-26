@@ -94,6 +94,21 @@ export default function PetSettings() {
       </SectionCard>
 
       <SectionCard title="Behavior">
+        <SettingRow label="Lost your Pet?">
+          <button
+            onClick={async () => {
+              usePetStore.getState().setSize("large");
+              usePetStore.getState().setOpacityIdle(1);
+              await new Promise((r) => setTimeout(r, 150));
+              const { findMyPet } = await import("@/lib/petWindow");
+              await findMyPet();
+            }}
+            className="px-4 py-2 bg-primary text-white rounded-lg text-[14px] font-semibold"
+          >
+            Find My Pet
+          </button>
+        </SettingRow>
+
         <SettingRow label="Always on Top">
           <input
             type="checkbox"
