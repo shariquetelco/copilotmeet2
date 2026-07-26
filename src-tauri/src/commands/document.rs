@@ -198,12 +198,24 @@ pub async fn ask_pet(
         .map(|r| r.content.clone())
         .unwrap_or_else(|| "No relevant information found in the uploaded documents.".to_string());
 
+    let project_brief: Option<String> = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        project_id.as_ref().and_then(|pid| {
+            crate::repositories::settings::SettingsRepository::get(&conn, &format!("project_brief.{}", pid))
+                .ok()
+                .flatten()
+                .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+                .and_then(|v| v["summary"].as_str().map(|s| s.to_string()))
+        })
+    };
+
     let prompt = rag_engine::prompt_builder::build_prompt(&rag_engine::prompt_builder::PromptContext {
         question: question.clone(),
         context,
         answer_style: answer_style.clone(),
         meeting_mode: meeting_mode.clone(),
         recent_history: recent_history.unwrap_or_default(),
+        project_brief,
     });
 
     let session_id: String = {
@@ -379,6 +391,7 @@ pub fn build_answer_prompt(
         answer_style: answer_style.clone(),
         meeting_mode: meeting_mode.clone(),
         recent_history: Vec::new(),
+        project_brief: None,
     });
     println!("Prompt Build: {}ms", build_start.elapsed().as_millis());
 

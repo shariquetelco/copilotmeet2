@@ -4,6 +4,7 @@ pub struct PromptContext {
     pub answer_style: String,
     pub meeting_mode: String,
     pub recent_history: Vec<(String, String)>, // (question, answer) pairs, most recent last
+    pub project_brief: Option<String>, // saved summary from Train CoPilot Project, if it exists
 }
 
 fn answer_style_instruction(style: &str) -> &'static str {
@@ -58,14 +59,25 @@ pub fn build_prompt(ctx: &PromptContext) -> String {
         FORMAT: Start with a 3-4 sentence summary. Then a blank line, then the key supporting details as short bullet points, each starting with \"- \". One idea per bullet. Do not use asterisks, headers, or any other markdown, plain text and \"- \" bullets only.\n\n\
         {}\n{}\n\n\
         {}\
+        {}\
         Context:\n{}\n\n\
         Question:\n{}",
         answer_style_instruction(&ctx.answer_style),
         meeting_mode_instruction(&ctx.meeting_mode),
+        format_project_brief(&ctx.project_brief),
         format_recent_history(&ctx.recent_history),
         ctx.context,
         ctx.question,
     )
+}
+
+fn format_project_brief(brief: &Option<String>) -> String {
+    match brief {
+        Some(summary) if !summary.trim().is_empty() => {
+            format!("Project background (for context, not the direct answer source):\n{}\n\n", summary)
+        }
+        _ => String::new(),
+    }
 }
 
 fn format_recent_history(history: &[(String, String)]) -> String {

@@ -196,6 +196,14 @@ struct TrainingReport {
 /// highlights from a sample of the actual content. Not per-document, one
 /// call total, to keep cost predictable regardless of project size.
 #[tauri::command]
+fn get_project_brief(state: State<AppState>, project_id: String) -> Result<Option<serde_json::Value>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let raw = repositories::settings::SettingsRepository::get(&conn, &format!("project_brief.{}", project_id))
+        .map_err(|e| e.to_string())?;
+    Ok(raw.and_then(|json| serde_json::from_str(&json).ok()))
+}
+
+#[tauri::command]
 async fn train_project(app: tauri::AppHandle, state: State<'_, AppState>, project_id: String) -> Result<TrainingReport, String> {
     let (word_count, document_count, keyterms, sample_content, project_name) = {
         let conn = state.db.lock().map_err(|e| e.to_string())?;

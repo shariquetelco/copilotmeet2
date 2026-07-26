@@ -16,7 +16,11 @@ function TrainProjectSection({ projectId }: { projectId: string }) {
 
       const { projectService } = await import("@/lib/projectService");
       const projects = await projectService.list();
-      setProjectName(projects.find((p: any) => p.id === projectId)?.name ?? "");
+      const name = projects.find((p: any) => p.id === projectId)?.name ?? "";
+      setProjectName(name);
+
+      const existing = await invoke("get_project_brief", { projectId });
+      if (existing) setReport({ ...(existing as any), project_name: name });
     })();
   }, [projectId]);
 
@@ -42,15 +46,22 @@ function TrainProjectSection({ projectId }: { projectId: string }) {
 
   if (report) {
     return (
-      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-2xl p-5 mb-6">
+      <div className="bg-green-50 border border-green-200 rounded-2xl p-5 mb-6">
         <div className="flex items-center gap-2 text-[16px] font-bold text-foreground mb-2">
-          <Sparkles size={18} className="text-purple-600" />
-          {report.project_name} is personalized
+          ✓ {report.project_name} is personalized
         </div>
         <p className="text-[14px] text-foreground mb-3">{report.summary}</p>
         <p className="text-[13px] text-muted-foreground">
           {report.document_count} documents · {report.word_count.toLocaleString()} words · {report.keyterm_count} key terms
+          {report.generated_at && ` · Trained ${new Date(report.generated_at).toLocaleDateString()}`}
         </p>
+        <button
+          onClick={handleTrain}
+          disabled={training}
+          className="mt-2 text-[13px] text-muted-foreground underline disabled:opacity-50"
+        >
+          {training ? "Retraining..." : "Retrain from scratch"}
+        </button>
       </div>
     );
   }
