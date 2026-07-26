@@ -29,7 +29,25 @@ struct DeepgramAlternative {
     transcript: String,
 }
 
-/// WASAPI hands us 32-bit float samples. Deepgram's linear16 encoding
+/// Confirms a Deepgram key works — lists projects, a free call that
+/// doesn't touch transcription billing.
+pub async fn verify_key(api_key: &str) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://api.deepgram.com/v1/projects")
+        .header("Authorization", format!("Token {}", api_key))
+        .send()
+        .await
+        .map_err(|e| format!("Verification request failed: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Key rejected ({})", response.status()))
+    }
+}
+
+/// WASAPI hands us 32-bit float samples.
 /// wants 16-bit signed integers. This converts one to the other.
 fn f32_bytes_to_i16_bytes(data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len() / 2);

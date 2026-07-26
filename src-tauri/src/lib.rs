@@ -237,6 +237,16 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
 }
 
 #[tauri::command]
+async fn verify_provider_key(provider: String, key: String) -> Result<(), String> {
+    if provider == "deepgram" {
+        return stt_engine::deepgram::verify_key(&key).await;
+    }
+    let llm_provider = llm_engine::LlmProvider::from_str(&provider)
+        .ok_or_else(|| format!("Unknown provider: {}", provider))?;
+    llm_engine::verify_key(llm_provider, &key).await
+}
+
+#[tauri::command]
 async fn create_credit_checkout(state: State<'_, AppState>, quantity: u32) -> Result<String, String> {
     use license::status::read_token;
     use license::verify::{check_token, TokenCheckResult};
@@ -600,6 +610,7 @@ pub fn run() {
             start_trial,
             get_license_details,
             create_credit_checkout,
+            verify_provider_key,
             test_broker_token,
             test_deepgram_transcription,
             start_meeting_session,

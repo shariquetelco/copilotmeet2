@@ -139,6 +139,37 @@ async fn ask_openai_compatible(
         .ok_or_else(|| format!("{} returned no choices", provider_name))
 }
 
+/// Confirms an API key actually works, without spending anything —
+/// these are cheap "list models" style calls, never a real completion
+/// just to test a key.
+pub async fn verify_key(provider: LlmProvider, api_key: &str) -> Result<(), String> {
+    let client = reqwest::Client::new();
+
+    let response = match provider {
+        LlmProvider::Groq => {
+            client.get("https://api.groq.com/openai/v1/models").bearer_auth(api_key).send().await
+        }
+        LlmProvider::OpenAI => {
+            client.get("https://api.openai.com/v1/models").bearer_auth(api_key).send().await
+        }
+        LlmProvider::Claude => {
+            client
+                .get("https://api.anthropic.com/v1/models")
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01")
+                .send()
+                .await
+        }
+    }
+    .map_err(|e| format!("Verification request failed: {}", e))?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Key rejected ({})", response.status()))
+    }
+}
+
 pub async fn ask_groq(api_key: &str, prompt: &str) -> Result<String, String> {
     ask_openai_compatible(GROQ_API_URL, GROQ_MODEL, api_key, prompt, "Groq").await
 }

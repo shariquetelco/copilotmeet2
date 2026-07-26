@@ -27,7 +27,25 @@ function ApiKeySection({ provider, label }: { provider: string; label: string })
   const apiKeys = useAISettingsStore((s) => s.apiKeys);
   const setApiKey = useAISettingsStore((s) => s.setApiKey);
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(apiKeys[provider] ?? "");
+  const [status, setStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [error, setError] = useState("");
   const hasKey = Boolean(apiKeys[provider]);
+
+  async function handleVerify() {
+    setStatus("checking");
+    setError("");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("verify_provider_key", { provider, key: draft });
+      // Only save after verification actually succeeds — never before.
+      await setApiKey(provider, draft);
+      setStatus("success");
+    } catch (err) {
+      setStatus("error");
+      setError(String(err));
+    }
+  }
 
   return (
     <div className="border-b border-border/60 last:border-b-0">
@@ -48,18 +66,24 @@ function ApiKeySection({ provider, label }: { provider: string; label: string })
           <div className="flex items-center gap-2">
             <input
               type="password"
-              value={apiKeys[provider] ?? ""}
-              onChange={(e) => setApiKey(provider, e.target.value)}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setStatus("idle");
+              }}
               placeholder="Enter API key"
               className="border border-input rounded-lg px-3 py-2 text-[16px] w-56 bg-white"
             />
             <button
-              disabled
-              className="px-4 py-2 bg-muted text-muted-foreground rounded-lg text-[14px] font-semibold cursor-not-allowed"
+              onClick={handleVerify}
+              disabled={!draft || status === "checking"}
+              className="px-4 py-2 bg-primary text-white rounded-lg text-[14px] font-semibold disabled:opacity-50"
             >
-              Verify API Key (Coming Soon)
+              {status === "checking" ? "Verifying..." : "Verify & Save"}
             </button>
+            {status === "success" && <span className="text-green-600 text-[14px]">✓ Connected</span>}
           </div>
+          {status === "error" && <p className="text-red-600 text-[13px] mt-2">{error}</p>}
         </div>
       )}
     </div>
