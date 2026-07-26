@@ -28,7 +28,9 @@ function ApiKeySection({ provider, label }: { provider: string; label: string })
   const setApiKey = useAISettingsStore((s) => s.setApiKey);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(apiKeys[provider] ?? "");
-  const [status, setStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "checking" | "success" | "error">(
+    apiKeys[provider] ? "success" : "idle"
+  );
   const [error, setError] = useState("");
   const hasKey = Boolean(apiKeys[provider]);
 
@@ -74,14 +76,17 @@ function ApiKeySection({ provider, label }: { provider: string; label: string })
               placeholder="Enter API key"
               className="border border-input rounded-lg px-3 py-2 text-[16px] w-56 bg-white"
             />
-            <button
-              onClick={handleVerify}
-              disabled={!draft || status === "checking"}
-              className="px-4 py-2 bg-primary text-white rounded-lg text-[14px] font-semibold disabled:opacity-50"
-            >
-              {status === "checking" ? "Verifying..." : "Verify & Save"}
-            </button>
-            {status === "success" && <span className="text-green-600 text-[14px]">✓ Connected</span>}
+            {status === "success" ? (
+              <span className="text-green-600 text-[14px] font-medium">✓ Verified</span>
+            ) : (
+              <button
+                onClick={handleVerify}
+                disabled={!draft || status === "checking"}
+                className="px-4 py-2 bg-primary text-white rounded-lg text-[14px] font-semibold disabled:opacity-50"
+              >
+                {status === "checking" ? "Verifying..." : "Verify & Save"}
+              </button>
+            )}
           </div>
           {status === "error" && <p className="text-red-600 text-[13px] mt-2">{error}</p>}
         </div>

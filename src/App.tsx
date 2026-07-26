@@ -4,6 +4,7 @@ import PetWidget from "@/components/pet/PetWidget";
 import SettingsPage from "@/pages/SettingsPage";
 import ActivationScreen from "@/components/license/ActivationScreen";
 import LockedScreen from "@/components/license/LockedScreen";
+import GettingStarted from "@/components/license/GettingStarted";
 import { usePetStore } from "@/store/petStore";
 import { settingsService } from "@/lib/settingsService";
 
@@ -30,12 +31,16 @@ async function spawnPetWindow() {
 
 function MainApp() {
   const [mode, setMode] = useState<AppMode | null>(null);
+  const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
 
   useEffect(() => {
     (async () => {
       const { invoke } = await import("@tauri-apps/api/core");
       const status = await invoke<AppMode>("get_license_status");
       setMode(status);
+
+      const seen = await settingsService.get("onboarding.ai_setup_seen");
+      setOnboardingDone(seen === "true");
     })();
   }, []);
 
@@ -55,6 +60,17 @@ function MainApp() {
 
   if (mode.mode === "Locked") {
     return <LockedScreen reason={String(mode.reason ?? "This license is no longer valid.")} />;
+  }
+
+  if (mode.mode === "Licensed" && onboardingDone === false) {
+    return (
+      <GettingStarted
+        onComplete={() => {
+          settingsService.set("onboarding.ai_setup_seen", "true");
+          setOnboardingDone(true);
+        }}
+      />
+    );
   }
 
   return (
