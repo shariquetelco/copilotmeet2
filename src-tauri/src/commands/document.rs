@@ -206,13 +206,24 @@ pub async fn ask_pet(
         recent_history: recent_history.unwrap_or_default(),
     });
 
-    let trial_session_id: Option<String> = {
+    let broker_identity: Option<crate::license::broker::BrokerIdentity> = {
         use crate::license::status::read_token;
         use crate::license::verify::{check_token, TokenCheckResult};
+        use crate::license::broker::BrokerIdentity;
 
         let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let has_byok = crate::repositories::api_keys::ApiKeyRepository::get(&conn, "groq")
+            .ok()
+            .flatten()
+            .is_some();
+
         read_token(&conn).and_then(|t| match check_token(&t) {
-            TokenCheckResult::Valid(claims) if claims.token_type == "trial" => claims.trial_session_id,
+            TokenCheckResult::Valid(claims) if claims.token_type == "trial" => {
+                claims.trial_session_id.map(BrokerIdentity::Trial)
+            }
+            TokenCheckResult::Valid(claims) if !has_byok => {
+                claims.license_id.map(BrokerIdentity::License)
+            }
             _ => None,
         })
     };
@@ -220,8 +231,8 @@ pub async fn ask_pet(
     let llm_start = std::time::Instant::now();
     let app_for_stream = app.clone();
 
-    let answer = if let Some(trial_id) = trial_session_id {
-        crate::license::broker::ask_groq_stream(&trial_id, &prompt, move |token| {
+    let answer = if let Some(identity) = broker_identity {
+        crate::license::broker::ask_groq_stream(&identity, &prompt, move |token| {
             let _ = app_for_stream.emit("answer_chunk", token);
         })
         .await?

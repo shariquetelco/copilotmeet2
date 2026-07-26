@@ -135,11 +135,29 @@ struct LicenseDetails {
     masked_key: Option<String>,
     last_verified_at: Option<i64>,
     expires_at: Option<usize>,
+    deepgram_source: Option<String>,
+    groq_source: Option<String>,
+}
+
+fn provider_source(conn: &rusqlite::Connection, provider: &str, is_trial: bool) -> String {
+    if is_trial {
+        return "Trial (funded by CopilotMeet)".to_string();
+    }
+    let has_byok = crate::repositories::api_keys::ApiKeyRepository::get(conn, provider)
+        .ok()
+        .flatten()
+        .is_some();
+    if has_byok {
+        "Your own key (BYOK)".to_string()
+    } else {
+        "Prepaid Credits".to_string()
+    }
 }
 
 #[tauri::command]
 async fn test_broker_token(trial_session_id: String) -> Result<license::broker::DeepgramTokenResponse, String> {
-    license::broker::request_deepgram_token(&trial_session_id).await
+    let identity = license::broker::BrokerIdentity::Trial(trial_session_id);
+    license::broker::request_deepgram_token(&identity).await
 }
 
 #[tauri::command]
@@ -161,6 +179,8 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
                 masked_key: None,
                 last_verified_at: None,
                 expires_at: None,
+                deepgram_source: None,
+                groq_source: None,
             })
         }
     };
@@ -177,6 +197,8 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
                 masked_key: None,
                 last_verified_at: None,
                 expires_at: None,
+                deepgram_source: None,
+                groq_source: None,
             })
         }
     };
@@ -194,9 +216,10 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
     });
 
     let last_verified_at = read_last_verified(&conn);
+    let is_trial = claims.token_type == "trial";
 
     Ok(LicenseDetails {
-        mode: if claims.token_type == "trial" { "Trial".to_string() } else { "Licensed".to_string() },
+        mode: if is_trial { "Trial".to_string() } else { "Licensed".to_string() },
         plan: claims.plan,
         email: claims.email,
         max_devices: claims.max_devices,
@@ -204,6 +227,8 @@ fn get_license_details(state: State<'_, AppState>) -> Result<LicenseDetails, Str
         masked_key,
         last_verified_at: Some(last_verified_at),
         expires_at: Some(claims.exp),
+        deepgram_source: Some(provider_source(&conn, "deepgram", is_trial)),
+        groq_source: Some(provider_source(&conn, "groq", is_trial)),
     })
 }
 
@@ -226,7 +251,8 @@ async fn start_trial(state: State<'_, AppState>, email: String) -> Result<licens
 
 enum AuthMode {
     Byok(String),
-    Trial(String), // trial_session_id — fetches a fresh broker token every iteration
+    Trial(String),  // trial_session_id
+    Credit(String), // license_id — falls back to purchased credits when no BYOK key is set
 }
 
 async fn determine_auth_mode(state: &State<'_, AppState>) -> Result<AuthMode, String> {
@@ -238,6 +264,8 @@ async fn determine_auth_mode(state: &State<'_, AppState>) -> Result<AuthMode, St
         read_token(&conn)
     };
 
+    let mut license_id_for_credit_fallback: Option<String> = None;
+
     if let Some(t) = token {
         if let TokenCheckResult::Valid(claims) = check_token(&t) {
             if claims.token_type == "trial" {
@@ -246,15 +274,24 @@ async fn determine_auth_mode(state: &State<'_, AppState>) -> Result<AuthMode, St
                     .ok_or("Trial token missing trialSessionId")?;
                 return Ok(AuthMode::Trial(trial_id));
             }
+            license_id_for_credit_fallback = claims.license_id;
         }
     }
 
-    // Licensed (or no valid trial claim) — fall back to BYOK, same as before.
+    // Licensed — prefer BYOK (costs us nothing), fall back to purchased
+    // credits if no BYOK key is configured yet.
     let conn = state.db.lock().map_err(|e| e.to_string())?;
-    let api_key = crate::repositories::api_keys::ApiKeyRepository::get(&conn, "deepgram")
-        .map_err(|e| e.to_string())?
-        .ok_or("No Deepgram API key configured. Add one in AI Settings.")?;
-    Ok(AuthMode::Byok(api_key))
+    let byok_key = crate::repositories::api_keys::ApiKeyRepository::get(&conn, "deepgram")
+        .map_err(|e| e.to_string())?;
+
+    match byok_key {
+        Some(key) => Ok(AuthMode::Byok(key)),
+        None => {
+            let license_id = license_id_for_credit_fallback
+                .ok_or("No Deepgram API key configured, and no license found for credit fallback.")?;
+            Ok(AuthMode::Credit(license_id))
+        }
+    }
 }
 
 #[tauri::command]
@@ -297,14 +334,28 @@ async fn run_session_with_reconnect(app: tauri::AppHandle, auth: AuthMode, keyte
     loop {
         let (token, use_bearer) = match &auth {
             AuthMode::Byok(key) => (key.clone(), false),
-            AuthMode::Trial(trial_id) => match license::broker::request_deepgram_token(trial_id).await {
-                Ok(resp) => (resp.access_token, true),
-                Err(e) => {
-                    println!("Trial broker token request failed: {}", e);
-                    let _ = app.emit("trial_ended", e);
-                    return;
+            AuthMode::Trial(trial_id) => {
+                let identity = license::broker::BrokerIdentity::Trial(trial_id.clone());
+                match license::broker::request_deepgram_token(&identity).await {
+                    Ok(resp) => (resp.access_token, true),
+                    Err(e) => {
+                        println!("Trial broker token request failed: {}", e);
+                        let _ = app.emit("trial_ended", e);
+                        return;
+                    }
                 }
-            },
+            }
+            AuthMode::Credit(license_id) => {
+                let identity = license::broker::BrokerIdentity::License(license_id.clone());
+                match license::broker::request_deepgram_token(&identity).await {
+                    Ok(resp) => (resp.access_token, true),
+                    Err(e) => {
+                        println!("Credit broker token request failed: {}", e);
+                        let _ = app.emit("credits_exhausted", e);
+                        return;
+                    }
+                }
+            }
         };
 
         let capture = match audio_engine::start_capture() {
@@ -356,7 +407,7 @@ async fn run_session_with_reconnect(app: tauri::AppHandle, auth: AuthMode, keyte
             }
         });
 
-        let is_trial = matches!(auth, AuthMode::Trial(_));
+        let is_trial = matches!(auth, AuthMode::Trial(_) | AuthMode::Credit(_));
 
         loop {
             tokio::select! {

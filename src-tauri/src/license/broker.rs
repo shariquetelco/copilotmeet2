@@ -2,10 +2,18 @@ use serde::{Deserialize, Serialize};
 
 const SERVER_URL: &str = "http://localhost:3000";
 
-#[derive(Serialize)]
-struct TokenRequest<'a> {
-    #[serde(rename = "trialSessionId")]
-    trial_session_id: &'a str,
+pub enum BrokerIdentity {
+    Trial(String),
+    License(String),
+}
+
+impl BrokerIdentity {
+    fn to_json(&self) -> serde_json::Value {
+        match self {
+            BrokerIdentity::Trial(id) => serde_json::json!({ "trialSessionId": id }),
+            BrokerIdentity::License(id) => serde_json::json!({ "licenseId": id }),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -22,18 +30,18 @@ use futures_util::StreamExt;
 /// streaming shape as llm_engine::ask_stream, so the caller doesn't need
 /// to know or care whether the answer came from BYOK or the broker.
 pub async fn ask_groq_stream<F: FnMut(&str) + Send>(
-    trial_session_id: &str,
+    identity: &BrokerIdentity,
     prompt: &str,
     mut on_token: F,
 ) -> Result<String, String> {
     let client = reqwest::Client::new();
+    let mut body = identity.to_json();
+    body["provider"] = serde_json::json!("groq");
+    body["prompt"] = serde_json::json!(prompt);
+
     let response = client
         .post(format!("{}/api/broker/ask", SERVER_URL))
-        .json(&serde_json::json!({
-            "trialSessionId": trial_session_id,
-            "provider": "groq",
-            "prompt": prompt,
-        }))
+        .json(&body)
         .send()
         .await
         .map_err(|e| format!("Broker request failed: {}", e))?;
@@ -75,11 +83,11 @@ pub async fn ask_groq_stream<F: FnMut(&str) + Send>(
 /// Requests a real, short-lived Deepgram token from the broker for a
 /// trial session. Fails with a clear error if the trial has expired or
 /// hit its usage cap — callers should treat that as "show Trial Ended."
-pub async fn request_deepgram_token(trial_session_id: &str) -> Result<DeepgramTokenResponse, String> {
+pub async fn request_deepgram_token(identity: &BrokerIdentity) -> Result<DeepgramTokenResponse, String> {
     let client = reqwest::Client::new();
     let response = client
         .post(format!("{}/api/broker/deepgram-token", SERVER_URL))
-        .json(&TokenRequest { trial_session_id })
+        .json(&identity.to_json())
         .send()
         .await
         .map_err(|e| format!("Broker request failed: {}", e))?;

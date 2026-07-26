@@ -14,12 +14,18 @@ impl ApiKeyRepository {
     }
 
     pub fn get(conn: &Connection, provider: &str) -> Result<Option<String>> {
-        conn.query_row(
-            "SELECT encrypted_key FROM api_keys WHERE provider = ?1",
-            params![provider],
-            |row| row.get(0),
-        )
-        .optional()
+        let result: Option<String> = conn
+            .query_row(
+                "SELECT encrypted_key FROM api_keys WHERE provider = ?1",
+                params![provider],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        // An empty string means "the row exists but has nothing useful in
+        // it" — treat that identically to "no key at all," everywhere
+        // this function is used, not just here.
+        Ok(result.filter(|k| !k.trim().is_empty()))
     }
 
     pub fn delete(conn: &Connection, provider: &str) -> Result<()> {
