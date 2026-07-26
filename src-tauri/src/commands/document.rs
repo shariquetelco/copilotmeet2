@@ -212,17 +212,35 @@ pub async fn ask_pet(
         use crate::license::broker::BrokerIdentity;
 
         let conn = state.db.lock().map_err(|e| e.to_string())?;
-        let has_byok = crate::repositories::api_keys::ApiKeyRepository::get(&conn, "groq")
-            .ok()
-            .flatten()
-            .is_some();
+
+        // The broker only ever proxies Groq — so it's only relevant when
+        // the user's actual selected provider is Groq, never as a silent
+        // substitute for whatever they really picked (OpenAI, Claude...).
+        let top_provider = crate::repositories::settings::SettingsRepository::get(
+            &conn,
+            "ai.llm_provider_priority",
+        )
+        .ok()
+        .flatten()
+        .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+        .and_then(|list| list.into_iter().next())
+        .unwrap_or_else(|| "groq".to_string());
 
         read_token(&conn).and_then(|t| match check_token(&t) {
             TokenCheckResult::Valid(claims) if claims.token_type == "trial" => {
+                // Trial users never chose a provider — always Groq via broker.
                 claims.trial_session_id.map(BrokerIdentity::Trial)
             }
-            TokenCheckResult::Valid(claims) if !has_byok => {
-                claims.license_id.map(BrokerIdentity::License)
+            TokenCheckResult::Valid(claims) if top_provider == "groq" => {
+                let has_groq_key = crate::repositories::api_keys::ApiKeyRepository::get(&conn, "groq")
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if has_groq_key {
+                    None
+                } else {
+                    claims.license_id.map(BrokerIdentity::License)
+                }
             }
             _ => None,
         })
@@ -230,6 +248,8 @@ pub async fn ask_pet(
 
     let llm_start = std::time::Instant::now();
     let app_for_stream = app.clone();
+
+    let mut provider_label = "groq (broker)".to_string();
 
     let answer = if let Some(identity) = broker_identity {
         crate::license::broker::ask_groq_stream(&identity, &prompt, move |token| {
@@ -267,6 +287,7 @@ pub async fn ask_pet(
             (provider, key)
         };
 
+        provider_label = provider.as_str().to_string();
         llm_engine::ask_stream(provider, &api_key, &prompt, move |token| {
             let _ = app_for_stream.emit("answer_chunk", token);
         })
@@ -274,7 +295,7 @@ pub async fn ask_pet(
     };
 
     let _ = app.emit("answer_done", ());
-    println!("LLM: {}ms", llm_start.elapsed().as_millis());
+    println!("LLM ({}): {}ms", provider_label, llm_start.elapsed().as_millis());
 
     Ok(AskPetResponse {
         answer,

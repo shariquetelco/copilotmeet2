@@ -8,7 +8,7 @@ const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
 const OPENAI_MODEL: &str = "gpt-4o-mini";
 
 const CLAUDE_API_URL: &str = "https://api.anthropic.com/v1/messages";
-const CLAUDE_MODEL: &str = "claude-3-5-sonnet-20241022";
+const CLAUDE_MODEL: &str = "claude-sonnet-4-6";
 const CLAUDE_API_VERSION: &str = "2023-06-01";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
