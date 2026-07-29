@@ -78,6 +78,7 @@ pub fn upload_document(
         file_type,
         status: "uploaded".to_string(),
         created_at: Utc::now().to_rfc3339(),
+        is_personal: false,
     };
 
     let conn = state.db.lock().map_err(|e| e.to_string())?;

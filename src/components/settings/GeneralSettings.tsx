@@ -219,6 +219,64 @@ function BuyCreditsSection({ licenseId }: { licenseId: string }) {
   );
 }
 
+function PersonalProfileSection() {
+  const [profile, setProfile] = useState<{ summary: string; document_count: number; generated_at: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const settings = await invoke<Record<string, string>>("get_all_settings");
+      const raw = settings["personal_profile"];
+      if (raw) setProfile(JSON.parse(raw));
+    })();
+  }, []);
+
+  async function handleLearn() {
+    setLoading(true);
+    setError("");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("learn_personal_profile");
+      setProfile(result as any);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <SectionCard title="Personal Profile">
+      <p
+        className="text-[14px] text-muted-foreground mb-3"
+        title="STAR-style questions and achievement extraction only draw from documents marked Personal — never from live interview questions or AI-generated answers."
+      >
+        Learns from documents you mark as "Personal" (your CV, resume, etc.) only — never from
+        interviewer questions or AI-generated answers.
+      </p>
+      {profile && (
+        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-3">
+          <p className="text-[14px] text-foreground whitespace-pre-line">{profile.summary}</p>
+          <p className="text-[13px] text-muted-foreground mt-2">
+            From {profile.document_count} personal document{profile.document_count === 1 ? "" : "s"} ·
+            Learned {new Date(profile.generated_at).toLocaleDateString()}
+          </p>
+        </div>
+      )}
+      <button
+        onClick={handleLearn}
+        disabled={loading}
+        className="px-5 py-2.5 bg-primary text-white rounded-xl text-[14px] font-semibold disabled:opacity-50"
+      >
+        {loading ? "Learning..." : profile ? "Relearn from Personal documents" : "Learn my profile"}
+      </button>
+      {error && <p className="text-[13px] text-red-600 mt-2">{error}</p>}
+    </SectionCard>
+  );
+}
+
 export default function GeneralSettings() {
   const { getSetting, updateSetting } = useSettingsStore();
 
@@ -275,6 +333,7 @@ export default function GeneralSettings() {
       </SectionCard>
 
       <LicenseSection />
+      <PersonalProfileSection />
     </div>
   );
 }

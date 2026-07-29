@@ -42,4 +42,5 @@ wasapi = "0.23"
 jsonwebtoken = "9"
 machine-uid = "0.5"
 sha2 = "0.10"
+printpdf = "0.7"
 

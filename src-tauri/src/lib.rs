@@ -195,6 +195,290 @@ struct TrainingReport {
 /// plus exactly one bounded LLM call to pull out a project summary and
 /// highlights from a sample of the actual content. Not per-document, one
 /// call total, to keep cost predictable regardless of project size.
+#[derive(serde::Serialize)]
+struct PersonalizationScore {
+    score: u32,
+    project_trained: bool,
+    personal_profile_exists: bool,
+    document_count: usize,
+    word_count: usize,
+    new_document_count: usize,
+}
+
+#[tauri::command]
+fn get_personalization_score(state: State<AppState>, project_id: String) -> Result<PersonalizationScore, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+    let brief = repositories::settings::SettingsRepository::get(&conn, &format!("project_brief.{}", project_id))
+        .ok()
+        .flatten()
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok());
+
+    let project_trained = brief.is_some();
+
+    let personal_profile_exists = repositories::settings::SettingsRepository::get(&conn, "personal_profile")
+        .ok()
+        .flatten()
+        .is_some();
+
+    let documents: Vec<_> = repositories::document::DocumentRepository::list_by_project(&conn, &project_id)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|d| d.status == "ready")
+        .collect();
+    let document_count = documents.len();
+
+    let chunks = repositories::chunk::ChunkRepository::list_by_project(&conn, &project_id)
+        .map_err(|e| e.to_string())?;
+    let word_count: usize = chunks.iter().map(|c| c.content.split_whitespace().count()).sum();
+
+    let trained_ids: std::collections::HashSet<String> = brief
+        .as_ref()
+        .and_then(|v| v["document_ids"].as_array().cloned())
+        .map(|arr| arr.into_iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let current_ids: std::collections::HashSet<String> = documents.iter().map(|d| d.id.clone()).collect();
+    let new_document_count = current_ids.difference(&trained_ids).count();
+
+    let mut score: i32 = 0;
+    if project_trained {
+        score += 40;
+    }
+    if personal_profile_exists {
+        score += 20;
+    }
+    score += ((document_count as f32 / 20.0).min(1.0) * 20.0) as i32;
+    score += ((word_count as f32 / 20000.0).min(1.0) * 20.0) as i32;
+    if project_trained && new_document_count > 0 {
+        score -= 10;
+    }
+    let score = score.clamp(0, 100) as u32;
+
+    Ok(PersonalizationScore {
+        score,
+        project_trained,
+        personal_profile_exists,
+        document_count,
+        word_count,
+        new_document_count,
+    })
+}
+
+fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split_whitespace() {
+        if current.len() + word.len() + 1 > max_chars {
+            lines.push(current.clone());
+            current.clear();
+        }
+        if !current.is_empty() {
+            current.push(' ');
+        }
+        current.push_str(word);
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    lines
+}
+
+#[tauri::command]
+fn export_project_brief_pdf(state: State<AppState>, project_id: String, output_path: String) -> Result<(), String> {
+    use printpdf::*;
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    let (brief, score, project_name) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+
+        let brief = repositories::settings::SettingsRepository::get(&conn, &format!("project_brief.{}", project_id))
+            .ok()
+            .flatten()
+            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+            .ok_or("This project hasn't been trained yet.")?;
+
+        let name = repositories::project::ProjectRepository::list(&conn)
+            .ok()
+            .and_then(|projects| projects.into_iter().find(|p| p.id == project_id))
+            .map(|p| p.name)
+            .unwrap_or_else(|| "Untitled Project".to_string());
+
+        (brief, None::<u32>, name)
+    };
+
+    let score_value = get_personalization_score(state, project_id.clone())?;
+
+    let (doc, page1, layer1) = PdfDocument::new(
+        &format!("{} - Project Intelligence Report", project_name),
+        Mm(210.0),
+        Mm(297.0),
+        "Layer 1",
+    );
+    let font = doc.add_builtin_font(BuiltinFont::Helvetica).map_err(|e| e.to_string())?;
+    let bold = doc.add_builtin_font(BuiltinFont::HelveticaBold).map_err(|e| e.to_string())?;
+    let layer = doc.get_page(page1).get_layer(layer1);
+
+    let mut y = 270.0;
+    layer.use_text(&project_name, 22.0, Mm(20.0), Mm(y), &bold);
+    y -= 8.0;
+    layer.use_text("Project Intelligence Report", 12.0, Mm(20.0), Mm(y), &font);
+    y -= 12.0;
+
+    layer.use_text("Knowledge Score", 14.0, Mm(20.0), Mm(y), &bold);
+    y -= 7.0;
+    layer.use_text(&format!("{}%", score_value.score), 14.0, Mm(20.0), Mm(y), &font);
+    y -= 12.0;
+
+    layer.use_text("Summary", 14.0, Mm(20.0), Mm(y), &bold);
+    y -= 7.0;
+    let summary = brief["summary"].as_str().unwrap_or("");
+    for line in wrap_text(summary, 95) {
+        layer.use_text(&line, 11.0, Mm(20.0), Mm(y), &font);
+        y -= 5.5;
+    }
+    y -= 8.0;
+
+    layer.use_text("Details", 14.0, Mm(20.0), Mm(y), &bold);
+    y -= 7.0;
+    let details = format!(
+        "Documents: {}   |   Word Count: {}   |   Key Terms: {}",
+        brief["document_count"].as_u64().unwrap_or(0),
+        brief["word_count"].as_u64().unwrap_or(0),
+        brief["keyterm_count"].as_u64().unwrap_or(0),
+    );
+    layer.use_text(&details, 11.0, Mm(20.0), Mm(y), &font);
+    y -= 6.0;
+    let trained = brief["generated_at"].as_str().unwrap_or("");
+    layer.use_text(&format!("Trained: {}", trained), 11.0, Mm(20.0), Mm(y), &font);
+
+    let _ = score; // reserved for a future breakdown section
+
+    let file = File::create(&output_path).map_err(|e| e.to_string())?;
+    doc.save(&mut BufWriter::new(file)).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn set_document_personal(state: State<AppState>, document_id: String, is_personal: bool) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    repositories::document::DocumentRepository::set_is_personal(&conn, &document_id, is_personal)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct PersonalProfile {
+    summary: String,
+    document_count: usize,
+    generated_at: String,
+}
+
+/// Learns from documents the user explicitly marked Personal (CV,
+/// resume, etc.) only — never from interviewer questions or
+/// AI-generated answers, which don't represent the user's own voice.
+#[tauri::command]
+async fn learn_personal_profile(state: State<'_, AppState>) -> Result<PersonalProfile, String> {
+    let (documents, sample_content) = {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let documents = repositories::document::DocumentRepository::list_personal(&conn)
+            .map_err(|e| e.to_string())?;
+
+        if documents.is_empty() {
+            return Err("No documents marked as Personal yet. Mark your CV or resume as Personal in a project's document list first.".to_string());
+        }
+
+        let mut sample_content = String::new();
+        for doc in &documents {
+            let chunks = repositories::chunk::ChunkRepository::list_by_document(&conn, &doc.id)
+                .unwrap_or_default();
+            for chunk in chunks.iter().take(15) {
+                sample_content.push_str(&chunk.content);
+                sample_content.push_str("\n\n");
+            }
+        }
+
+        (documents, sample_content)
+    };
+
+    let prompt = format!(
+        "The following is content from someone's personal documents (CV, resume, etc.). Extract, in plain factual bullet points, only what is explicitly stated: their key skills, achievements, past projects, certifications, and any leadership examples. Do not invent anything not present in the text. If something isn't mentioned, don't include it.\n\nContent:\n{}",
+        sample_content
+    );
+
+    let broker_identity: Option<license::broker::BrokerIdentity> = {
+        use crate::license::status::read_token;
+        use crate::license::verify::{check_token, TokenCheckResult};
+        use crate::license::broker::BrokerIdentity;
+
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let top_provider = repositories::settings::SettingsRepository::get(&conn, "ai.llm_provider_priority")
+            .ok()
+            .flatten()
+            .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+            .and_then(|list| list.into_iter().next())
+            .unwrap_or_else(|| "groq".to_string());
+
+        read_token(&conn).and_then(|t| match check_token(&t) {
+            TokenCheckResult::Valid(claims) if claims.token_type == "trial" => {
+                claims.trial_session_id.map(BrokerIdentity::Trial)
+            }
+            TokenCheckResult::Valid(claims) if top_provider == "groq" => {
+                let has_groq_key = repositories::api_keys::ApiKeyRepository::get(&conn, "groq")
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if has_groq_key { None } else { claims.license_id.map(BrokerIdentity::License) }
+            }
+            _ => None,
+        })
+    };
+
+    let summary = if let Some(identity) = broker_identity {
+        license::broker::ask_groq_stream(&identity, &prompt, |_| {}).await?
+    } else {
+        let (provider, key) = {
+            let conn = state.db.lock().map_err(|e| e.to_string())?;
+            let provider_str = repositories::settings::SettingsRepository::get(&conn, "ai.llm_provider_priority")
+                .ok()
+                .flatten()
+                .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+                .and_then(|list| list.into_iter().next())
+                .unwrap_or_else(|| "groq".to_string());
+            let provider = llm_engine::LlmProvider::from_str(&provider_str)
+                .ok_or_else(|| format!("Unknown provider: {}", provider_str))?;
+            let key = repositories::api_keys::ApiKeyRepository::get(&conn, provider.as_str())
+                .map_err(|e| e.to_string())?
+                .ok_or("No API key configured. Add one in AI Settings.")?;
+            (provider, key)
+        };
+        llm_engine::ask(provider, &key, &prompt).await?
+    };
+
+    let generated_at = chrono::Utc::now().to_rfc3339();
+
+    {
+        let conn = state.db.lock().map_err(|e| e.to_string())?;
+        let profile = serde_json::json!({
+            "summary": summary,
+            "document_count": documents.len(),
+            "generated_at": generated_at,
+        });
+        let _ = repositories::settings::SettingsRepository::set(
+            &conn,
+            "personal_profile",
+            &profile.to_string(),
+            &generated_at,
+        );
+    }
+
+    Ok(PersonalProfile {
+        summary,
+        document_count: documents.len(),
+        generated_at,
+    })
+}
+
 #[tauri::command]
 fn get_project_brief(state: State<AppState>, project_id: String) -> Result<Option<serde_json::Value>, String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
@@ -1037,6 +1321,10 @@ pub fn run() {
             get_project_brief,
             check_new_documents,
             optimize_knowledge,
+            set_document_personal,
+            learn_personal_profile,
+            get_personalization_score,
+            export_project_brief_pdf,
             verify_provider_key,
             test_broker_token,
             test_deepgram_transcription,

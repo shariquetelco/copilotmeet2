@@ -37,6 +37,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
             FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
         );",
     ),
+    (
+        "005_add_document_is_personal",
+        "ALTER TABLE documents ADD COLUMN is_personal INTEGER NOT NULL DEFAULT 0;",
+    ),
 ];
 
 pub fn run_migrations(conn: &Connection) -> Result<(), rusqlite::Error> {

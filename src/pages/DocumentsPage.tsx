@@ -2,7 +2,56 @@ import { useEffect, useState } from "react";
 import { useDocumentStore } from "@/store/documentStore";
 import { Document, FREE_TIER_LIMIT_BYTES, documentService, SearchResult } from "@/lib/documentService";
 import ProcessingStepper from "@/components/documents/ProcessingStepper";
-import { Search, Sparkles } from "lucide-react";
+import { Search, Sparkles, AlertTriangle } from "lucide-react";
+
+function KnowledgeScoreSection({ projectId }: { projectId: string }) {
+  const [data, setData] = useState<{
+    score: number;
+    project_trained: boolean;
+    personal_profile_exists: boolean;
+    document_count: number;
+    new_document_count: number;
+  } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("get_personalization_score", { projectId });
+      setData(result as any);
+    })();
+  }, [projectId]);
+
+  if (!data) return null;
+
+  return (
+    <div className="bg-card rounded-2xl shadow-sm p-5 mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[15px] font-semibold text-foreground">Knowledge Score</span>
+        <span className="text-[20px] font-bold text-primary">{data.score}%</span>
+      </div>
+      <div className="flex flex-col gap-1.5 text-[14px]">
+        <div className={`flex items-center gap-2 ${data.project_trained ? "text-foreground" : "text-muted-foreground"}`}>
+          {data.project_trained ? <CheckCircle2 size={15} className="text-success" /> : <span className="w-[15px]" />}
+          Project trained
+        </div>
+        <div className={`flex items-center gap-2 ${data.personal_profile_exists ? "text-foreground" : "text-muted-foreground"}`}>
+          {data.personal_profile_exists ? <CheckCircle2 size={15} className="text-success" /> : <span className="w-[15px]" />}
+          Personal profile
+        </div>
+        <div className="flex items-center gap-2 text-foreground">
+          <CheckCircle2 size={15} className="text-success" />
+          {data.document_count} document{data.document_count === 1 ? "" : "s"}
+        </div>
+        {data.new_document_count > 0 && (
+          <div className="flex items-center gap-2 text-warning">
+            <AlertTriangle size={15} />
+            {data.new_document_count} new document{data.new_document_count === 1 ? "" : "s"} not optimized
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function TrainProjectSection({ projectId }: { projectId: string }) {
   const [stats, setStats] = useState<{ document_count: number; word_count: number; ready_to_train: boolean } | null>(null);
@@ -20,13 +69,18 @@ function TrainProjectSection({ projectId }: { projectId: string }) {
       setProjectName(name);
 
       const existing = await invoke("get_project_brief", { projectId });
-      if (existing) setReport({ ...(existing as any), project_name: name });
+      if (existing) {
+        setReport({ ...(existing as any), project_name: name });
+        const newDocs = await invoke<{ new_document_count: number }>("check_new_documents", { projectId });
+        setNewDocCount(newDocs.new_document_count);
+      }
     })();
   }, [projectId]);
 
   const [training, setTraining] = useState(false);
   const [report, setReport] = useState<any>(null);
   const [error, setError] = useState("");
+  const [newDocCount, setNewDocCount] = useState(0);
 
   async function handleTrain() {
     setTraining(true);
@@ -35,6 +89,22 @@ function TrainProjectSection({ projectId }: { projectId: string }) {
       const { invoke } = await import("@tauri-apps/api/core");
       const result = await invoke("train_project", { projectId });
       setReport(result);
+      setNewDocCount(0);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setTraining(false);
+    }
+  }
+
+  async function handleOptimize() {
+    setTraining(true);
+    setError("");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("optimize_knowledge", { projectId });
+      setReport(result);
+      setNewDocCount(0);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -55,13 +125,48 @@ function TrainProjectSection({ projectId }: { projectId: string }) {
           {report.document_count} documents · {report.word_count.toLocaleString()} words · {report.keyterm_count} key terms
           {report.generated_at && ` · Trained ${new Date(report.generated_at).toLocaleDateString()}`}
         </p>
-        <button
-          onClick={handleTrain}
-          disabled={training}
-          className="mt-2 text-[13px] text-muted-foreground underline disabled:opacity-50"
-        >
-          {training ? "Retraining..." : "Retrain from scratch"}
-        </button>
+
+        {newDocCount > 0 && (
+          <div className="mt-3 pt-3 border-t border-green-200 flex items-center justify-between">
+            <span className="text-[14px] text-foreground">
+              {newDocCount} new document{newDocCount === 1 ? "" : "s"} detected. Your AI can become more accurate.
+            </span>
+            <button
+              onClick={handleOptimize}
+              disabled={training}
+              className="px-4 py-2 bg-primary text-white rounded-xl text-[13px] font-semibold whitespace-nowrap disabled:opacity-50"
+            >
+              {training ? "Optimizing..." : "Optimize Knowledge"}
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-4 mt-2">
+          <button
+            onClick={handleTrain}
+            disabled={training}
+            className="text-[13px] text-muted-foreground underline disabled:opacity-50"
+          >
+            {training ? "Retraining..." : "Retrain from scratch"}
+          </button>
+          <button
+            onClick={async () => {
+              const { save } = await import("@tauri-apps/plugin-dialog");
+              const path = await save({
+                defaultPath: `${report.project_name} - Project Intelligence Report.pdf`,
+                filters: [{ name: "PDF", extensions: ["pdf"] }],
+              });
+              if (!path) return;
+              const { invoke } = await import("@tauri-apps/api/core");
+              await invoke("export_project_brief_pdf", { projectId, outputPath: path });
+              const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+              await revealItemInDir(path);
+            }}
+            className="text-[13px] text-primary underline"
+          >
+            Export PDF
+          </button>
+        </div>
       </div>
     );
   }
@@ -243,6 +348,19 @@ function StatusBadge({ status }: { status: string }) {
 
 function DocumentRow({ doc, onDelete }: { doc: Document; onDelete: () => void }) {
   const Icon = fileIcons[doc.file_type] ?? FileText;
+  const [isPersonal, setIsPersonal] = useState((doc as any).is_personal ?? false);
+  const [toggling, setToggling] = useState(false);
+
+  async function togglePersonal() {
+    setToggling(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("set_document_personal", { documentId: doc.id, isPersonal: !isPersonal });
+      setIsPersonal(!isPersonal);
+    } finally {
+      setToggling(false);
+    }
+  }
 
   return (
     <div className="bg-card rounded-2xl shadow-sm px-5 py-4 transition-all hover:shadow-md">
@@ -256,6 +374,18 @@ function DocumentRow({ doc, onDelete }: { doc: Document; onDelete: () => void })
             {doc.file_type} · {formatSize(doc.file_size_bytes)}
           </div>
         </div>
+        {doc.status === "ready" && (
+          <button
+            onClick={togglePersonal}
+            disabled={toggling}
+            title="Personal documents (CV, resume, etc.) are used to learn your skills, achievements, and STAR-style answers — regular project documents are not."
+            className={`text-[12px] font-semibold px-2.5 py-1 rounded-full shrink-0 disabled:opacity-50 ${
+              isPersonal ? "bg-purple-100 text-purple-700" : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {isPersonal ? "★ Personal" : "Mark Personal"}
+          </button>
+        )}
         <StatusBadge status={doc.status} />
         <button
           onClick={onDelete}
@@ -282,6 +412,7 @@ export default function DocumentsPage({ projectId }: { projectId: string }) {
   return (
     <div>
       <StorageMeter used={storageUsed} limit={FREE_TIER_LIMIT_BYTES} />
+      <KnowledgeScoreSection projectId={projectId} />
       <TrainProjectSection projectId={projectId} />
       <KnowledgeSearch projectId={projectId} />
 
