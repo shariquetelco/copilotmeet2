@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePetStore, QAEntry } from "@/store/petStore";
 import { projectService } from "@/lib/projectService";
@@ -235,7 +235,7 @@ export default function PetWidget() {
     qaHistory,
     togglePin,
     size,
-    position: dockPosition,
+    
     opacityIdle,
     askQuestion,
     selectedProjectId,
@@ -268,7 +268,7 @@ export default function PetWidget() {
 
   const sizeMap = { small: 48, medium: 64, large: 88 };
   const dotSize = sizeMap[size];
-  const [hovering, setHovering] = useState(false);
+  const [, setHovering] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const orderedHistory = [...qaHistory].reverse();

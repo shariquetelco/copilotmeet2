@@ -6,17 +6,19 @@ import { Search, Sparkles, AlertTriangle } from "lucide-react";
 
 function KnowledgeScoreSection({ projectId }: { projectId: string }) {
   const [data, setData] = useState<{
-    score: number;
-    project_trained: boolean;
-    personal_profile_exists: boolean;
+    knowledge_score: number;
     document_count: number;
+    word_count: number;
+    session_count: number;
+    question_count: number;
     new_document_count: number;
+    last_optimized: string | null;
   } | null>(null);
 
   useEffect(() => {
     (async () => {
       const { invoke } = await import("@tauri-apps/api/core");
-      const result = await invoke("get_personalization_score", { projectId });
+      const result = await invoke("get_project_health", { projectId });
       setData(result as any);
     })();
   }, [projectId]);
@@ -26,29 +28,26 @@ function KnowledgeScoreSection({ projectId }: { projectId: string }) {
   return (
     <div className="bg-card rounded-2xl shadow-sm p-5 mb-6">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[15px] font-semibold text-foreground">Knowledge Score</span>
-        <span className="text-[20px] font-bold text-primary">{data.score}%</span>
+        <span className="text-[15px] font-semibold text-foreground">Project Health</span>
+        <span className="text-[20px] font-bold text-primary">{data.knowledge_score}%</span>
       </div>
-      <div className="flex flex-col gap-1.5 text-[14px]">
-        <div className={`flex items-center gap-2 ${data.project_trained ? "text-foreground" : "text-muted-foreground"}`}>
-          {data.project_trained ? <CheckCircle2 size={15} className="text-success" /> : <span className="w-[15px]" />}
-          Project trained
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[14px] text-foreground">
+        <div>{data.document_count} document{data.document_count === 1 ? "" : "s"}</div>
+        <div>{data.word_count.toLocaleString()} words</div>
+        <div>{data.session_count} session{data.session_count === 1 ? "" : "s"}</div>
+        <div>{data.question_count} question{data.question_count === 1 ? "" : "s"} answered</div>
+        <div className="col-span-2">
+          {data.last_optimized
+            ? `Last trained ${new Date(data.last_optimized).toLocaleDateString()}`
+            : "Not yet trained"}
         </div>
-        <div className={`flex items-center gap-2 ${data.personal_profile_exists ? "text-foreground" : "text-muted-foreground"}`}>
-          {data.personal_profile_exists ? <CheckCircle2 size={15} className="text-success" /> : <span className="w-[15px]" />}
-          Personal profile
-        </div>
-        <div className="flex items-center gap-2 text-foreground">
-          <CheckCircle2 size={15} className="text-success" />
-          {data.document_count} document{data.document_count === 1 ? "" : "s"}
-        </div>
-        {data.new_document_count > 0 && (
-          <div className="flex items-center gap-2 text-warning">
-            <AlertTriangle size={15} />
-            {data.new_document_count} new document{data.new_document_count === 1 ? "" : "s"} not optimized
-          </div>
-        )}
       </div>
+      {data.new_document_count > 0 && (
+        <div className="flex items-center gap-2 text-warning mt-2 text-[14px]">
+          <AlertTriangle size={15} />
+          {data.new_document_count} new document{data.new_document_count === 1 ? "" : "s"} not optimized
+        </div>
+      )}
     </div>
   );
 }

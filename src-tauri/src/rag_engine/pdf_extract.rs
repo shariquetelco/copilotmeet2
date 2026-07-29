@@ -1,13 +1,10 @@
 use pdfium_render::prelude::*;
 use crate::rag_engine::ocr_extract;
+use std::path::Path;
 
-fn bind_pdfium() -> Result<Pdfium, String> {
-    let lib_path = std::env::current_dir()
-        .map_err(|e| e.to_string())?
-        .join("pdfium-lib/lib");
-
+fn bind_pdfium(pdfium_lib_dir: &Path) -> Result<Pdfium, String> {
     Ok(Pdfium::new(
-        Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(&lib_path))
+        Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path(pdfium_lib_dir))
             .map_err(|e| format!("Failed to load PDFium library: {}", e))?,
     ))
 }
@@ -15,8 +12,8 @@ fn bind_pdfium() -> Result<Pdfium, String> {
 /// Extracts all selectable text from a PDF. Returns an empty string
 /// (not an error) for scanned/image-only PDFs with no text layer —
 /// callers should fall back to extract_text_via_ocr in that case.
-pub fn extract_text(file_path: &str) -> Result<String, String> {
-    let pdfium = bind_pdfium()?;
+pub fn extract_text(file_path: &str, pdfium_lib_dir: &Path) -> Result<String, String> {
+    let pdfium = bind_pdfium(pdfium_lib_dir)?;
 
     let document = pdfium
         .load_pdf_from_file(file_path, None)
@@ -37,8 +34,8 @@ pub fn extract_text(file_path: &str) -> Result<String, String> {
 
 /// Rasterizes every page of a scanned PDF into an image and runs OCR on each.
 /// Used when extract_text() returns no selectable text.
-pub fn extract_text_via_ocr(file_path: &str) -> Result<String, String> {
-    let pdfium = bind_pdfium()?;
+pub fn extract_text_via_ocr(file_path: &str, pdfium_lib_dir: &Path) -> Result<String, String> {
+    let pdfium = bind_pdfium(pdfium_lib_dir)?;
 
     let document = pdfium
         .load_pdf_from_file(file_path, None)

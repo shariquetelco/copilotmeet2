@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { settingsService } from "@/lib/settingsService";
-import { documentService } from "@/lib/documentService";
 import { projectService } from "@/lib/projectService";
 
 function questionOverlapsWith(a: string, b: string): boolean {
@@ -93,6 +92,7 @@ export const usePetStore = create<PetStore>((set, get) => ({
   alwaysOnTop: true,
   hydrated: false,
   streamingEntryId: null,
+  selectedProjectId: null,
   toast: null,
   listening: false,
   sessionStatus: "Stopped" as SessionStatus,

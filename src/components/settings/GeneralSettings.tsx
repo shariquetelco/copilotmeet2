@@ -158,13 +158,13 @@ function LicenseSection() {
       </SettingRow>
 
       {details.mode === "Licensed" && details.license_id && (
-        <BuyCreditsSection licenseId={details.license_id} />
+        <BuyCreditsSection />
       )}
     </SectionCard>
   );
 }
 
-function BuyCreditsSection({ licenseId }: { licenseId: string }) {
+function BuyCreditsSection() {
   const [quantity, setQuantity] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -277,6 +277,107 @@ function PersonalProfileSection() {
   );
 }
 
+function UsageAnalyticsSection() {
+  const [data, setData] = useState<{
+    total_sessions: number;
+    total_questions: number;
+    provider_breakdown: Record<string, number>;
+  } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("get_usage_analytics");
+      setData(result as any);
+    })();
+  }, []);
+
+  if (!data) return null;
+
+  return (
+    <SectionCard title="Usage">
+      <p className="text-[13px] text-muted-foreground mb-3">
+        Local stats only — nothing here leaves your machine.
+      </p>
+      <div className="grid grid-cols-2 gap-y-2 text-[14px]">
+        <SettingRow label="Meetings">
+          <span>{data.total_sessions}</span>
+        </SettingRow>
+        <SettingRow label="Questions Answered">
+          <span>{data.total_questions}</span>
+        </SettingRow>
+      </div>
+      {Object.keys(data.provider_breakdown).length > 0 && (
+        <div className="mt-2">
+          <span className="text-[13px] font-semibold text-muted-foreground">By provider</span>
+          <div className="flex flex-col gap-1 mt-1">
+            {Object.entries(data.provider_breakdown).map(([provider, count]) => (
+              <div key={provider} className="flex justify-between text-[14px]">
+                <span className="capitalize">{provider}</span>
+                <span>{count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function DiagnosticsSection() {
+  const [results, setResults] = useState<{ name: string; passed: boolean; message: string; action_label: string | null }[] | null>(null);
+  const [running, setRunning] = useState(false);
+
+  async function handleRun() {
+    setRunning(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("run_diagnostics");
+      setResults(result as any);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const allPassed = results?.every((r) => r.passed) ?? false;
+
+  return (
+    <SectionCard title="Diagnostics">
+      <p className="text-[13px] text-muted-foreground mb-3">
+        Checks run only when you click below — nothing runs automatically in the background.
+      </p>
+
+      {results && (
+        <div className="flex flex-col gap-2 mb-4">
+          {results.map((r) => (
+            <div key={r.name} className="flex items-start gap-2 text-[14px]">
+              <span className={r.passed ? "text-success" : "text-red-600"}>{r.passed ? "✓" : "✗"}</span>
+              <div>
+                <div className="font-medium text-foreground">{r.name}</div>
+                <div className="text-muted-foreground">{r.message}</div>
+                {!r.passed && r.action_label && (
+                  <div className="text-[12px] text-primary mt-0.5">→ {r.action_label}</div>
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="pt-2 mt-1 border-t border-border text-[14px] font-semibold">
+            Overall Status: {allPassed ? "Healthy ✅" : "Needs Attention ⚠️"}
+          </div>
+        </div>
+      )}
+
+      <button
+        onClick={handleRun}
+        disabled={running}
+        className="px-5 py-2.5 bg-primary text-white rounded-xl text-[14px] font-semibold disabled:opacity-50"
+      >
+        {running ? "Running..." : results ? "Run Again" : "Run Diagnostics"}
+      </button>
+    </SectionCard>
+  );
+}
+
 export default function GeneralSettings() {
   const { getSetting, updateSetting } = useSettingsStore();
 
@@ -334,6 +435,8 @@ export default function GeneralSettings() {
 
       <LicenseSection />
       <PersonalProfileSection />
+      <UsageAnalyticsSection />
+      <DiagnosticsSection />
     </div>
   );
 }

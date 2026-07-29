@@ -17,7 +17,12 @@ use chrono::Utc;
 use std::fs;
 use uuid::Uuid;
 
-pub fn process_document(conn: &Connection, doc: &Document, app_data_dir: &std::path::Path) -> Result<(), String> {
+pub fn process_document(
+    conn: &Connection,
+    doc: &Document,
+    app_data_dir: &std::path::Path,
+    pdfium_lib_dir: &std::path::Path,
+) -> Result<(), String> {
     let advance = |stage: &str, error: Option<&str>| -> Result<(), String> {
         let now = Utc::now().to_rfc3339();
         DocumentJobRepository::update_stage(conn, &doc.id, stage, error, &now)
@@ -31,11 +36,11 @@ pub fn process_document(conn: &Connection, doc: &Document, app_data_dir: &std::p
         }
         "PDF" => {
             advance("extracting", None)?;
-            let mut text = pdf_extract::extract_text(&doc.file_path)?;
+            let mut text = pdf_extract::extract_text(&doc.file_path, pdfium_lib_dir)?;
 
             if text.trim().is_empty() {
                 advance("ocr", None)?;
-                text = pdf_extract::extract_text_via_ocr(&doc.file_path)?;
+                text = pdf_extract::extract_text_via_ocr(&doc.file_path, pdfium_lib_dir)?;
             }
             text
         }

@@ -97,7 +97,12 @@ pub fn upload_document(
 
    // Synchronous for now — real background threading arrives once
     // slower extraction types (PDF/OCR) make blocking noticeable.
-    if let Err(e) = rag_engine::process_document(&conn, &doc, &app_data_dir) {
+    let pdfium_lib_dir = app
+        .path()
+        .resolve("pdfium-lib/lib", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| e.to_string())?;
+
+    if let Err(e) = rag_engine::process_document(&conn, &doc, &app_data_dir, &pdfium_lib_dir) {
         // Don't leave a broken, half-processed document counting against
         // the user's storage quota with no way to see or remove it —
         // clean up everything this upload created and surface the reason.
