@@ -646,6 +646,22 @@ async fn run_diagnostics(app: tauri::AppHandle, state: State<'_, AppState>) -> R
 }
 
 #[tauri::command]
+fn get_storage_limit_mb(state: State<AppState>) -> Result<u32, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    use crate::license::status::read_token;
+    use crate::license::verify::{check_token, TokenCheckResult};
+
+    let limit_mb = read_token(&conn)
+        .and_then(|t| match check_token(&t) {
+            TokenCheckResult::Valid(claims) => claims.storage_limit_mb_per_project,
+            _ => None,
+        })
+        .unwrap_or(5);
+
+    Ok(limit_mb)
+}
+
+#[tauri::command]
 fn set_document_personal(state: State<AppState>, document_id: String, is_personal: bool) -> Result<(), String> {
     let conn = state.db.lock().map_err(|e| e.to_string())?;
     repositories::document::DocumentRepository::set_is_personal(&conn, &document_id, is_personal)
@@ -1613,6 +1629,7 @@ pub fn run() {
             get_project_health,
             get_usage_analytics,
             run_diagnostics,
+            get_storage_limit_mb,
             verify_provider_key,
             test_broker_token,
             test_deepgram_transcription,

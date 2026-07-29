@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useDocumentStore } from "@/store/documentStore";
-import { Document, FREE_TIER_LIMIT_BYTES, documentService, SearchResult } from "@/lib/documentService";
+import { Document, documentService, SearchResult } from "@/lib/documentService";
 import ProcessingStepper from "@/components/documents/ProcessingStepper";
 import { Search, Sparkles, AlertTriangle } from "lucide-react";
 
@@ -315,9 +315,11 @@ function StorageMeter({ used, limit }: { used: number; limit: number }) {
           style={{ width: `${percent}%` }}
         />
       </div>
-      <button className="mt-3 text-[13px] font-semibold text-primary hover:underline">
-        Upgrade to Premium — get 200 MB per project (1000% more storage)
-      </button>
+      {limit < 200 * 1024 * 1024 && (
+        <button className="mt-3 text-[13px] font-semibold text-primary hover:underline">
+          Upgrade to Premium — get 200 MB per project (1000% more storage)
+        </button>
+      )}
     </div>
   );
 }
@@ -403,14 +405,20 @@ function DocumentRow({ doc, onDelete }: { doc: Document; onDelete: () => void })
 export default function DocumentsPage({ projectId }: { projectId: string }) {
   const { documents, storageUsed, error, loading, fetchDocuments, uploadFiles, deleteDocument } =
     useDocumentStore();
+  const [storageLimitBytes, setStorageLimitBytes] = useState(5 * 1024 * 1024);
 
   useEffect(() => {
     fetchDocuments(projectId);
+    (async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const limitMb = await invoke<number>("get_storage_limit_mb");
+      setStorageLimitBytes(limitMb * 1024 * 1024);
+    })();
   }, [projectId]);
 
   return (
     <div>
-      <StorageMeter used={storageUsed} limit={FREE_TIER_LIMIT_BYTES} />
+      <StorageMeter used={storageUsed} limit={storageLimitBytes} />
       <KnowledgeScoreSection projectId={projectId} />
       <TrainProjectSection projectId={projectId} />
       <KnowledgeSearch projectId={projectId} />

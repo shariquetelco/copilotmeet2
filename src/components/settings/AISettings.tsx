@@ -16,7 +16,7 @@ function SettingRow({ label, children, helper }: { label: string; children: Reac
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-card rounded-2xl shadow-sm p-6 mb-6">
+    <div className="bg-card rounded-2xl border border-border shadow-[0_6px_30px_rgba(26,21,35,0.08)] p-6 mb-6">
       <h2 className="text-[22px] font-bold text-foreground mb-2">{title}</h2>
       <div>{children}</div>
     </div>

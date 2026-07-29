@@ -12,9 +12,23 @@ use chrono::Utc;
 use std::fs;
 use std::path::PathBuf;
 
-const FREE_TIER_PROJECT_BYTES: i64 = 5 * 1024 * 1024; // 5MB, per PRD
-// Premium tier (200MB) will be selected based on real license status once
-// license activation exists — logged as a MAJOR gap for the Windows session.
+/// Reads the real, current storage limit from the active license/trial
+/// token — never a fixed constant. Falls back to the safe trial default
+/// (5MB) if no valid token is present, which should never actually
+/// happen given the app is already gated on licensing before this runs.
+fn get_storage_limit_bytes(conn: &rusqlite::Connection) -> i64 {
+    use crate::license::status::read_token;
+    use crate::license::verify::{check_token, TokenCheckResult};
+
+    let limit_mb = read_token(conn)
+        .and_then(|t| match check_token(&t) {
+            TokenCheckResult::Valid(claims) => claims.storage_limit_mb_per_project,
+            _ => None,
+        })
+        .unwrap_or(5);
+
+    limit_mb as i64 * 1024 * 1024
+}
 
 #[tauri::command]
 pub fn upload_document(
@@ -34,11 +48,13 @@ pub fn upload_document(
         let conn = state.db.lock().map_err(|e| e.to_string())?;
         let current_usage = DocumentRepository::total_size_for_project(&conn, &project_id)
             .map_err(|e| e.to_string())?;
+        let limit_bytes = get_storage_limit_bytes(&conn);
 
-        if current_usage + metadata.len() as i64 > FREE_TIER_PROJECT_BYTES {
+        if current_usage + metadata.len() as i64 > limit_bytes {
             return Err(format!(
-                "Storage Limit Reached: this project has used {:.1} MB of its 5 MB limit. Remove documents or upgrade to Premium to continue uploading.",
-                current_usage as f64 / (1024.0 * 1024.0)
+                "Storage Limit Reached: this project has used {:.1} MB of its {} MB limit. Remove documents or upgrade to continue uploading.",
+                current_usage as f64 / (1024.0 * 1024.0),
+                limit_bytes / (1024 * 1024)
             ));
         }
     }

@@ -21,6 +21,8 @@ pub struct LicenseClaims {
     pub email: Option<String>,
     #[serde(rename = "activationCount")]
     pub activation_count: Option<u32>,
+    #[serde(rename = "storageLimitMbPerProject")]
+    pub storage_limit_mb_per_project: Option<u32>,
     pub exp: usize,
     pub iat: usize,
 }

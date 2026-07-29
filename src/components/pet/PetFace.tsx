@@ -73,6 +73,7 @@ export default function PetFace({
         />
       ) : (
         <motion.circle
+          cx={38 + eyeOffsetX}
           cy={eyeState === "alert" ? 38 : 40}
           r={eyeState === "alert" ? 6 : 5}
           fill={lineColor}
@@ -96,6 +97,7 @@ export default function PetFace({
         />
       ) : (
         <motion.circle
+          cx={62 + eyeOffsetX}
           cy={eyeState === "alert" ? 38 : 40}
           r={eyeState === "alert" ? 6 : 5}
           fill={lineColor}

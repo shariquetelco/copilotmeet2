@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { useSettingsStore } from "@/store/settingsStore";
+import { usePetStore } from "@/store/petStore";
+import PetAvatar from "@/components/pet/PetAvatar";
 import GeneralSettings from "@/components/settings/GeneralSettings";
 import PetSettings from "@/components/settings/PetSettings";
 import AISettings from "@/components/settings/AISettings";
@@ -47,6 +49,11 @@ const actions = [
   { label: "About", icon: Info },
 ];
 
+function SidebarPetAvatar() {
+  const persona = usePetStore((s) => s.persona);
+  return <PetAvatar state="idle" status="ready" size={64} persona={persona as any} />;
+}
+
 export default function SettingsPage() {
   const [active, setActive] = useState<Section>("Projects");
   const fetchSettings = useSettingsStore((s) => s.fetchSettings);
@@ -64,7 +71,7 @@ export default function SettingsPage() {
         className={`text-left px-4 py-3 rounded-xl text-[18px] font-semibold flex items-center gap-3 transition-colors duration-200 ${
           active === item.label
             ? "bg-primary text-white"
-            : "text-gray-300 hover:bg-sidebar-accent hover:text-white"
+            : "text-gray-300 hover:bg-white/10 hover:text-white"
         }`}
       >
         <Icon size={20} strokeWidth={2} />
@@ -74,16 +81,18 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-background text-foreground">
+    <div className="flex h-screen w-screen bg-backgroexport default function SettingsPage() {und text-foreground">
       <aside className="w-[300px] h-full bg-sidebar text-sidebar-foreground p-6 flex flex-col justify-between shrink-0 overflow-y-auto">
         <div>
           <div className="flex items-center gap-3 mb-8 mt-2">
-            <div className="relative w-20 h-20 rounded-full bg-slate-700 border-2 border-primary flex items-center justify-center text-3xl shrink-0">
-              🤖
+            <div className="relative shrink-0">
+              <SidebarPetAvatar />
               <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-success border-2 border-sidebar" />
             </div>
             <div>
-              <div className="font-bold text-lg text-white">Nova</div>
+              <div className="font-bold text-lg text-white capitalize">
+                {usePetStore.getState().persona}
+              </div>
               <div className="text-sm text-gray-400">Ready</div>
             </div>
           </div>
@@ -106,7 +115,7 @@ export default function SettingsPage() {
             return (
               <button
                 key={a.label}
-                className="text-left px-3 py-2 rounded-lg text-[16px] flex items-center gap-3 text-slate-300 hover:bg-sidebar-accent hover:text-white transition-colors"
+                className="text-left px-3 py-2 rounded-lg text-[16px] flex items-center gap-3 text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
               >
                 <Icon size={16} strokeWidth={2} />
                 <span>{a.label}</span>

@@ -1,12 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@700;800&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  font-family: "Geist Variable", Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Inter", Avenir, Helvetica, Arial, sans-serif;
+  --font-heading: "Sora", "Inter", sans-serif;
   font-size: 16px;
   line-height: 24px;
   font-weight: 600;
@@ -17,45 +18,45 @@
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
 
-  /* CopilotMeet brand tokens */
-  --background: #f8f9f4;
-  --foreground: #111827;
+  /* CopilotMeet brand tokens — mapped from the real, live copilotmeet.com palette */
+  --background: #FFFDF9;
+  --foreground: #1A1523;
   --card: #FFFFFF;
-  --card-foreground: #101a2e;
+  --card-foreground: #1A1523;
   --popover: #FFFFFF;
-  --popover-foreground: #111827;
-  --primary: #4139e7;
+  --popover-foreground: #1A1523;
+  --primary: #7C5CFF;
   --primary-foreground: #FFFFFF;
-  --secondary: #EEF2FF;
-  --secondary-foreground: #5750e6;
-  --muted: #F3F4F6;
-  --muted-foreground: #6B7280;
-  --accent: #EEF2FF;
-  --accent-foreground: #4F46E5;
+  --secondary: #F7F4FC;
+  --secondary-foreground: #7C5CFF;
+  --muted: #FBF8F2;
+  --muted-foreground: #6E6880;
+  --accent: #F7F4FC;
+  --accent-foreground: #4D9FFF;
   --destructive: #DC2626;
-  --border: #dce0e9;
-  --input: #E5E7EB;
-  --ring: #4F46E5;
+  --border: rgba(26, 21, 35, 0.08);
+  --input: rgba(26, 21, 35, 0.14);
+  --ring: #7C5CFF;
 
-  --color-success: #16A34A;
-  --color-warning: #EA580C;
+  --color-success: #2EC4A6;
+  --color-warning: #F4B03E;
 
-  --chart-1: #4F46E5;
-  --chart-2: #7C3AED;
-  --chart-3: #16A34A;
-  --chart-4: #EA580C;
-  --chart-5: #DC2626;
+  --chart-1: #7C5CFF;
+  --chart-2: #4D9FFF;
+  --chart-3: #2EC4A6;
+  --chart-4: #F4B03E;
+  --chart-5: #F15BB5;
 
-  --radius: 1rem;
+  --radius: 22px;
 
-  --sidebar: #1E293B;
-  --sidebar-foreground: #E5E7EB;
-  --sidebar-primary: #4F46E5;
+  --sidebar: #16141F;
+  --sidebar-foreground: #F0EEF7;
+  --sidebar-primary: #7C5CFF;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #334155;
-  --sidebar-accent-foreground: #F3F4F6;
-  --sidebar-border: #334155;
-  --sidebar-ring: #4F46E5;
+  --sidebar-accent: #1C1928;
+  --sidebar-accent-foreground: #F0EEF7;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #7C5CFF;
 }
 
 @theme inline {
