@@ -245,6 +245,7 @@ export default function PetWidget() {
     questionsDetected,
     toggleListening,
     toast,
+    persona,
   } = usePetStore();
 
   const [manualQuestion, setManualQuestion] = useState("");
@@ -338,7 +339,7 @@ export default function PetWidget() {
     >
       {!expanded && (
         <div style={{ pointerEvents: "none", padding: 8 }}>
-          <PetAvatar state={state} status={status} size={dotSize} />
+          <PetAvatar state={state} status={status} size={dotSize} persona={persona as any} />
         </div>
       )}
 
@@ -353,7 +354,7 @@ export default function PetWidget() {
           >
             <div data-tauri-drag-region className="flex items-center gap-3 px-5 pt-5 pb-3 shrink-0 border-b border-border cursor-grab active:cursor-grabbing">
               <div style={{ pointerEvents: "none" }} className="flex items-center gap-3">
-                <PetAvatar state={state} status={status} size={40} />
+                <PetAvatar state={state} status={status} size={40} persona={persona as any} />
                 <div>
                   <div className="font-bold text-[16px] text-foreground">Nova</div>
                   <div className="text-[13px] text-muted-foreground capitalize">
