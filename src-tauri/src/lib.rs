@@ -1237,7 +1237,7 @@ async fn create_credit_checkout(state: State<'_, AppState>, quantity: u32) -> Re
 
     let client = reqwest::Client::new();
     let response = client
-        .post("http://localhost:3000/api/stripe/checkout-credits")
+        .post("https://copilotmeet-server.vercel.app/api/stripe/checkout-credits")
         .json(&serde_json::json!({ "licenseId": license_id, "quantity": quantity }))
         .send()
         .await

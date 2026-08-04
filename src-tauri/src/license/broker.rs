@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-const SERVER_URL: &str = "http://localhost:3000";
+const SERVER_URL: &str = "https://copilotmeet-server.vercel.app";
 
 pub enum BrokerIdentity {
     Trial(String),

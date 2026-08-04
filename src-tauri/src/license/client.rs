@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 // Local dev for now — becomes api.copilotmeet.com once the server's deployed.
-const SERVER_URL: &str = "http://localhost:3000";
+const SERVER_URL: &str = "https://copilotmeet-server.vercel.app";
 
 #[derive(Serialize)]
 struct ActivateRequest<'a> {
